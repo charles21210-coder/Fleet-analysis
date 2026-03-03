@@ -1,0 +1,1170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fleet Availability Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Barlow+Condensed:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0d14;
+    --surface: #111520;
+    --surface2: #181e2e;
+    --border: #1e2a3a;
+    --amber: #f59e0b;
+    --amber2: #fbbf24;
+    --red: #ef4444;
+    --green: #22c55e;
+    --blue: #3b82f6;
+    --pink: #f43f5e;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --mono: 'Space Mono', monospace;
+    --sans: 'Barlow Condensed', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 16px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .logo-icon {
+    width: 40px; height: 40px;
+    background: var(--amber);
+    clip-path: polygon(0 25%, 50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+
+  .logo-text {
+    font-family: var(--sans);
+    font-weight: 900;
+    font-size: 22px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+
+  .logo-sub {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .live-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--green);
+    letter-spacing: 0.1em;
+  }
+
+  .live-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
+    50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(34,197,94,0); }
+  }
+
+  .tab-nav {
+    display: flex;
+    gap: 2px;
+    background: var(--bg);
+    border-radius: 4px;
+    padding: 2px;
+  }
+
+  .tab-btn {
+    padding: 6px 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.15s;
+  }
+
+  .tab-btn.active {
+    background: var(--amber);
+    color: var(--bg);
+    font-weight: 700;
+  }
+
+  .tab-btn:hover:not(.active) {
+    color: var(--text);
+  }
+
+  .main {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 28px 32px;
+  }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* KPI Row */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .kpi::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+  }
+
+  .kpi.amber::before { background: var(--amber); }
+  .kpi.red::before { background: var(--red); }
+  .kpi.green::before { background: var(--green); }
+  .kpi.blue::before { background: var(--blue); }
+
+  .kpi-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .kpi-value {
+    font-family: var(--mono);
+    font-size: 36px;
+    font-weight: 700;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .kpi.amber .kpi-value { color: var(--amber); }
+  .kpi.red .kpi-value { color: var(--red); }
+  .kpi.green .kpi-value { color: var(--green); }
+  .kpi.blue .kpi-value { color: var(--blue); }
+
+  .kpi-sub {
+    font-family: var(--sans);
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 300;
+  }
+
+  .kpi-corner {
+    position: absolute;
+    bottom: 12px; right: 16px;
+    font-size: 32px;
+    opacity: 0.06;
+  }
+
+  /* Charts */
+  .chart-grid {
+    display: grid;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .chart-grid-2 { grid-template-columns: 1fr 1fr; }
+  .chart-grid-3 { grid-template-columns: 2fr 1fr; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 24px;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+
+  .card-title {
+    font-family: var(--sans);
+    font-weight: 700;
+    font-size: 16px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text);
+  }
+
+  .card-subtitle {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .chart-wrap {
+    position: relative;
+  }
+
+  /* Legend pills */
+  .legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+
+  /* Fleet category bars */
+  .cat-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 4px;
+  }
+
+  .cat-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .cat-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    width: 36px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .cat-bar-bg {
+    flex: 1;
+    height: 8px;
+    background: var(--surface2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .cat-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s ease;
+  }
+
+  .cat-count {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    width: 40px;
+  }
+
+  /* Table */
+  .table-controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+
+  .search-box {
+    flex: 1;
+    max-width: 320px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    outline: none;
+  }
+
+  .search-box:focus { border-color: var(--amber); }
+  .search-box::placeholder { color: var(--muted); }
+
+  select.filter-select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    outline: none;
+    cursor: pointer;
+  }
+
+  select.filter-select:focus { border-color: var(--amber); }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .data-table th {
+    text-align: left;
+    padding: 10px 14px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  .data-table th:hover { color: var(--amber); }
+
+  .data-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(30,42,58,0.5);
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  .data-table tr:hover td {
+    background: rgba(245,158,11,0.05);
+  }
+
+  .table-scroll {
+    max-height: 480px;
+    overflow-y: auto;
+  }
+
+  .table-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+  .table-scroll::-webkit-scrollbar-track { background: var(--surface2); }
+  .table-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+
+  .badge-s01 { background: rgba(245,158,11,0.15); color: var(--amber); }
+  .badge-l27 { background: rgba(59,130,246,0.15); color: #60a5fa; }
+  .badge-l20 { background: rgba(16,185,129,0.15); color: #34d399; }
+  .badge-l21 { background: rgba(244,63,94,0.15); color: #fb7185; }
+
+  .bar-inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .bar-inline-bg {
+    width: 60px;
+    height: 4px;
+    background: var(--surface2);
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .bar-inline-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: var(--amber);
+  }
+
+  .section-title {
+    font-family: var(--sans);
+    font-weight: 900;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Responsive tweaks */
+  @media (max-width: 1100px) {
+    .kpi-row { grid-template-columns: repeat(2, 1fr); }
+    .chart-grid-2, .chart-grid-3 { grid-template-columns: 1fr; }
+  }
+
+  .tooltip-custom {
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .no-data { 
+    text-align: center; 
+    padding: 40px; 
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🚛</div>
+    <div>
+      <div class="logo-text">Fleet Ops</div>
+      <div class="logo-sub">Availability Intelligence Platform</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="live-badge"><div class="live-dot"></div>DATA: JAN 2024 — MAR 2026</div>
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="showTab('availability')">Availability</button>
+      <button class="tab-btn" onclick="showTab('maintenance')">Maintenance</button>
+      <button class="tab-btn" onclick="showTab('defects')">Defects</button>
+      <button class="tab-btn" onclick="showTab('fleet')">Fleet</button>
+    </div>
+  </div>
+</header>
+
+<div class="main">
+
+<!-- ===== TAB: AVAILABILITY ===== -->
+<div class="tab-content active" id="tab-availability">
+
+  <div class="kpi-row">
+    <div class="kpi amber">
+      <div class="kpi-label">Total Fleet (excl. trailers)</div>
+      <div class="kpi-value">629</div>
+      <div class="kpi-sub">S01 · L20 · L21 · L27</div>
+      <div class="kpi-corner">🚛</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-label">Avg. Trucks Out / Day</div>
+      <div class="kpi-value">30.6</div>
+      <div class="kpi-sub">rolling avg since Jan 2024</div>
+      <div class="kpi-corner">📉</div>
+    </div>
+    <div class="kpi green">
+      <div class="kpi-label">Peak Trucks Out</div>
+      <div class="kpi-value">55</div>
+      <div class="kpi-sub">single-day maximum</div>
+      <div class="kpi-corner">⚠️</div>
+    </div>
+    <div class="kpi blue">
+      <div class="kpi-label">Avg. Available</div>
+      <div class="kpi-value">598</div>
+      <div class="kpi-sub">trucks operational per day</div>
+      <div class="kpi-corner">✅</div>
+    </div>
+  </div>
+
+  <!-- Main availability chart -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Daily Trucks Out of Service</div>
+        <div class="card-subtitle" style="margin-top:2px;">immobile defects only · Jan 2024 – Mar 2026</div>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>Daily count</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>7-day rolling avg</div>
+      </div>
+    </div>
+    <div class="chart-wrap" style="height:300px;">
+      <canvas id="availChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Category breakdown + down avg -->
+  <div class="chart-grid chart-grid-2">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Fleet Composition</div>
+        <div class="card-subtitle">by internal category</div>
+      </div>
+      <div class="cat-bars" id="catBars"></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Avg Downtime per Category</div>
+        <div class="card-subtitle">hours · trucks with ≥1 immobile defect</div>
+      </div>
+      <div class="chart-wrap" style="height:200px;">
+        <canvas id="downtimeCatChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: MAINTENANCE ===== -->
+<div class="tab-content" id="tab-maintenance">
+  <div class="kpi-row">
+    <div class="kpi amber">
+      <div class="kpi-label">Total Maintenance Cost</div>
+      <div class="kpi-value">€2.92M</div>
+      <div class="kpi-sub">all periods combined</div>
+    </div>
+    <div class="kpi blue">
+      <div class="kpi-label">Avg Cost per S01</div>
+      <div class="kpi-value">€4,817</div>
+      <div class="kpi-sub">tractors</div>
+    </div>
+    <div class="kpi green">
+      <div class="kpi-label">Avg Cost per L27</div>
+      <div class="kpi-value">€4,724</div>
+      <div class="kpi-sub">large lorries</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-label">Avg Cost per L21</div>
+      <div class="kpi-value">€4,033</div>
+      <div class="kpi-sub">medium lorries</div>
+    </div>
+  </div>
+
+  <div class="chart-grid chart-grid-3" style="margin-bottom:16px;">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Monthly Maintenance Spend</div>
+        <div class="card-subtitle">€ net · all categories</div>
+      </div>
+      <div class="chart-wrap" style="height:280px;">
+        <canvas id="maintMonthChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Cost by Category</div>
+        <div class="card-subtitle">€ total</div>
+      </div>
+      <div class="chart-wrap" style="height:280px;">
+        <canvas id="maintCatChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scatter: km vs cost -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">Mileage vs Maintenance Cost</div>
+        <div class="card-subtitle">per truck · grouped by category</div>
+      </div>
+      <div class="legend" id="scatterKmLegend"></div>
+    </div>
+    <div class="chart-wrap" style="height:320px;">
+      <canvas id="scatterKmChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TAB: DEFECTS ===== -->
+<div class="tab-content" id="tab-defects">
+
+  <div class="kpi-row">
+    <div class="kpi red">
+      <div class="kpi-label">Immobile Defect Events</div>
+      <div class="kpi-value" id="kpiTotalDefects">—</div>
+      <div class="kpi-sub">truck is mobile = No</div>
+    </div>
+    <div class="kpi amber">
+      <div class="kpi-label">Unique Trucks Affected</div>
+      <div class="kpi-value">371</div>
+      <div class="kpi-sub">of 629 in fleet</div>
+    </div>
+    <div class="kpi blue">
+      <div class="kpi-label">Avg Downtime / Affected Truck</div>
+      <div class="kpi-value" id="kpiAvgDown">—</div>
+      <div class="kpi-sub">hours (2024–2026)</div>
+    </div>
+    <div class="kpi green">
+      <div class="kpi-label">Top Defect Type</div>
+      <div class="kpi-value" style="font-size:18px;">Mechanical</div>
+      <div class="kpi-sub">493 events</div>
+    </div>
+  </div>
+
+  <div class="chart-grid chart-grid-2" style="margin-bottom:16px;">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Defect Type Distribution</div>
+        <div class="card-subtitle">immobile events only</div>
+      </div>
+      <div class="chart-wrap" style="height:280px;">
+        <canvas id="defectTypeChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Age vs Downtime Hours</div>
+        <div class="card-subtitle">per truck · grouped by category</div>
+      </div>
+      <div class="chart-wrap" style="height:280px;">
+        <canvas id="scatterAgeChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== TAB: FLEET ===== -->
+<div class="tab-content" id="tab-fleet">
+
+  <div class="table-controls">
+    <input type="text" class="search-box" placeholder="Search plate number..." id="tableSearch" oninput="filterTable()">
+    <select class="filter-select" id="catFilter" onchange="filterTable()">
+      <option value="">All categories</option>
+      <option value="S01">S01 – Tractor</option>
+      <option value="L27">L27 – Large Lorry</option>
+      <option value="L21">L21 – Medium Lorry</option>
+      <option value="L20">L20 – Light Lorry</option>
+    </select>
+    <select class="filter-select" id="sortFilter" onchange="filterTable()">
+      <option value="downtime">Sort: Downtime ↓</option>
+      <option value="maint">Sort: Maint Cost ↓</option>
+      <option value="km">Sort: Mileage ↓</option>
+      <option value="age">Sort: Age ↓</option>
+    </select>
+    <span id="tableCount" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px;"></span>
+  </div>
+
+  <div class="card" style="padding:0;">
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Plate</th>
+            <th>Category</th>
+            <th>Brand / Model</th>
+            <th>Reg. Date</th>
+            <th>Age (yrs)</th>
+            <th>Mileage (km)</th>
+            <th>Activity Center</th>
+            <th>Maint. Cost (€)</th>
+            <th>Downtime (h)</th>
+          </tr>
+        </thead>
+        <tbody id="fleetTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+</div><!-- end .main -->
+
+<script>
+const D = {"daily": {"dates": ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05", "2024-01-06", "2024-01-07", "2024-01-08", "2024-01-09", "2024-01-10", "2024-01-11", "2024-01-12", "2024-01-13", "2024-01-14", "2024-01-15", "2024-01-16", "2024-01-17", "2024-01-18", "2024-01-19", "2024-01-20", "2024-01-21", "2024-01-22", "2024-01-23", "2024-01-24", "2024-01-25", "2024-01-26", "2024-01-27", "2024-01-28", "2024-01-29", "2024-01-30", "2024-01-31", "2024-02-01", "2024-02-02", "2024-02-03", "2024-02-04", "2024-02-05", "2024-02-06", "2024-02-07", "2024-02-08", "2024-02-09", "2024-02-10", "2024-02-11", "2024-02-12", "2024-02-13", "2024-02-14", "2024-02-15", "2024-02-16", "2024-02-17", "2024-02-18", "2024-02-19", "2024-02-20", "2024-02-21", "2024-02-22", "2024-02-23", "2024-02-24", "2024-02-25", "2024-02-26", "2024-02-27", "2024-02-28", "2024-02-29", "2024-03-01", "2024-03-02", "2024-03-03", "2024-03-04", "2024-03-05", "2024-03-06", "2024-03-07", "2024-03-08", "2024-03-09", "2024-03-10", "2024-03-11", "2024-03-12", "2024-03-13", "2024-03-14", "2024-03-15", "2024-03-16", "2024-03-17", "2024-03-18", "2024-03-19", "2024-03-20", "2024-03-21", "2024-03-22", "2024-03-23", "2024-03-24", "2024-03-25", "2024-03-26", "2024-03-27", "2024-03-28", "2024-03-29", "2024-03-30", "2024-03-31", "2024-04-01", "2024-04-02", "2024-04-03", "2024-04-04", "2024-04-05", "2024-04-06", "2024-04-07", "2024-04-08", "2024-04-09", "2024-04-10", "2024-04-11", "2024-04-12", "2024-04-13", "2024-04-14", "2024-04-15", "2024-04-16", "2024-04-17", "2024-04-18", "2024-04-19", "2024-04-20", "2024-04-21", "2024-04-22", "2024-04-23", "2024-04-24", "2024-04-25", "2024-04-26", "2024-04-27", "2024-04-28", "2024-04-29", "2024-04-30", "2024-05-01", "2024-05-02", "2024-05-03", "2024-05-04", "2024-05-05", "2024-05-06", "2024-05-07", "2024-05-08", "2024-05-09", "2024-05-10", "2024-05-11", "2024-05-12", "2024-05-13", "2024-05-14", "2024-05-15", "2024-05-16", "2024-05-17", "2024-05-18", "2024-05-19", "2024-05-20", "2024-05-21", "2024-05-22", "2024-05-23", "2024-05-24", "2024-05-25", "2024-05-26", "2024-05-27", "2024-05-28", "2024-05-29", "2024-05-30", "2024-05-31", "2024-06-01", "2024-06-02", "2024-06-03", "2024-06-04", "2024-06-05", "2024-06-06", "2024-06-07", "2024-06-08", "2024-06-09", "2024-06-10", "2024-06-11", "2024-06-12", "2024-06-13", "2024-06-14", "2024-06-15", "2024-06-16", "2024-06-17", "2024-06-18", "2024-06-19", "2024-06-20", "2024-06-21", "2024-06-22", "2024-06-23", "2024-06-24", "2024-06-25", "2024-06-26", "2024-06-27", "2024-06-28", "2024-06-29", "2024-06-30", "2024-07-01", "2024-07-02", "2024-07-03", "2024-07-04", "2024-07-05", "2024-07-06", "2024-07-07", "2024-07-08", "2024-07-09", "2024-07-10", "2024-07-11", "2024-07-12", "2024-07-13", "2024-07-14", "2024-07-15", "2024-07-16", "2024-07-17", "2024-07-18", "2024-07-19", "2024-07-20", "2024-07-21", "2024-07-22", "2024-07-23", "2024-07-24", "2024-07-25", "2024-07-26", "2024-07-27", "2024-07-28", "2024-07-29", "2024-07-30", "2024-07-31", "2024-08-01", "2024-08-02", "2024-08-03", "2024-08-04", "2024-08-05", "2024-08-06", "2024-08-07", "2024-08-08", "2024-08-09", "2024-08-10", "2024-08-11", "2024-08-12", "2024-08-13", "2024-08-14", "2024-08-15", "2024-08-16", "2024-08-17", "2024-08-18", "2024-08-19", "2024-08-20", "2024-08-21", "2024-08-22", "2024-08-23", "2024-08-24", "2024-08-25", "2024-08-26", "2024-08-27", "2024-08-28", "2024-08-29", "2024-08-30", "2024-08-31", "2024-09-01", "2024-09-02", "2024-09-03", "2024-09-04", "2024-09-05", "2024-09-06", "2024-09-07", "2024-09-08", "2024-09-09", "2024-09-10", "2024-09-11", "2024-09-12", "2024-09-13", "2024-09-14", "2024-09-15", "2024-09-16", "2024-09-17", "2024-09-18", "2024-09-19", "2024-09-20", "2024-09-21", "2024-09-22", "2024-09-23", "2024-09-24", "2024-09-25", "2024-09-26", "2024-09-27", "2024-09-28", "2024-09-29", "2024-09-30", "2024-10-01", "2024-10-02", "2024-10-03", "2024-10-04", "2024-10-05", "2024-10-06", "2024-10-07", "2024-10-08", "2024-10-09", "2024-10-10", "2024-10-11", "2024-10-12", "2024-10-13", "2024-10-14", "2024-10-15", "2024-10-16", "2024-10-17", "2024-10-18", "2024-10-19", "2024-10-20", "2024-10-21", "2024-10-22", "2024-10-23", "2024-10-24", "2024-10-25", "2024-10-26", "2024-10-27", "2024-10-28", "2024-10-29", "2024-10-30", "2024-10-31", "2024-11-01", "2024-11-02", "2024-11-03", "2024-11-04", "2024-11-05", "2024-11-06", "2024-11-07", "2024-11-08", "2024-11-09", "2024-11-10", "2024-11-11", "2024-11-12", "2024-11-13", "2024-11-14", "2024-11-15", "2024-11-16", "2024-11-17", "2024-11-18", "2024-11-19", "2024-11-20", "2024-11-21", "2024-11-22", "2024-11-23", "2024-11-24", "2024-11-25", "2024-11-26", "2024-11-27", "2024-11-28", "2024-11-29", "2024-11-30", "2024-12-01", "2024-12-02", "2024-12-03", "2024-12-04", "2024-12-05", "2024-12-06", "2024-12-07", "2024-12-08", "2024-12-09", "2024-12-10", "2024-12-11", "2024-12-12", "2024-12-13", "2024-12-14", "2024-12-15", "2024-12-16", "2024-12-17", "2024-12-18", "2024-12-19", "2024-12-20", "2024-12-21", "2024-12-22", "2024-12-23", "2024-12-24", "2024-12-25", "2024-12-26", "2024-12-27", "2024-12-28", "2024-12-29", "2024-12-30", "2024-12-31", "2025-01-01", "2025-01-02", "2025-01-03", "2025-01-04", "2025-01-05", "2025-01-06", "2025-01-07", "2025-01-08", "2025-01-09", "2025-01-10", "2025-01-11", "2025-01-12", "2025-01-13", "2025-01-14", "2025-01-15", "2025-01-16", "2025-01-17", "2025-01-18", "2025-01-19", "2025-01-20", "2025-01-21", "2025-01-22", "2025-01-23", "2025-01-24", "2025-01-25", "2025-01-26", "2025-01-27", "2025-01-28", "2025-01-29", "2025-01-30", "2025-01-31", "2025-02-01", "2025-02-02", "2025-02-03", "2025-02-04", "2025-02-05", "2025-02-06", "2025-02-07", "2025-02-08", "2025-02-09", "2025-02-10", "2025-02-11", "2025-02-12", "2025-02-13", "2025-02-14", "2025-02-15", "2025-02-16", "2025-02-17", "2025-02-18", "2025-02-19", "2025-02-20", "2025-02-21", "2025-02-22", "2025-02-23", "2025-02-24", "2025-02-25", "2025-02-26", "2025-02-27", "2025-02-28", "2025-03-01", "2025-03-02", "2025-03-03", "2025-03-04", "2025-03-05", "2025-03-06", "2025-03-07", "2025-03-08", "2025-03-09", "2025-03-10", "2025-03-11", "2025-03-12", "2025-03-13", "2025-03-14", "2025-03-15", "2025-03-16", "2025-03-17", "2025-03-18", "2025-03-19", "2025-03-20", "2025-03-21", "2025-03-22", "2025-03-23", "2025-03-24", "2025-03-25", "2025-03-26", "2025-03-27", "2025-03-28", "2025-03-29", "2025-03-30", "2025-03-31", "2025-04-01", "2025-04-02", "2025-04-03", "2025-04-04", "2025-04-05", "2025-04-06", "2025-04-07", "2025-04-08", "2025-04-09", "2025-04-10", "2025-04-11", "2025-04-12", "2025-04-13", "2025-04-14", "2025-04-15", "2025-04-16", "2025-04-17", "2025-04-18", "2025-04-19", "2025-04-20", "2025-04-21", "2025-04-22", "2025-04-23", "2025-04-24", "2025-04-25", "2025-04-26", "2025-04-27", "2025-04-28", "2025-04-29", "2025-04-30", "2025-05-01", "2025-05-02", "2025-05-03", "2025-05-04", "2025-05-05", "2025-05-06", "2025-05-07", "2025-05-08", "2025-05-09", "2025-05-10", "2025-05-11", "2025-05-12", "2025-05-13", "2025-05-14", "2025-05-15", "2025-05-16", "2025-05-17", "2025-05-18", "2025-05-19", "2025-05-20", "2025-05-21", "2025-05-22", "2025-05-23", "2025-05-24", "2025-05-25", "2025-05-26", "2025-05-27", "2025-05-28", "2025-05-29", "2025-05-30", "2025-05-31", "2025-06-01", "2025-06-02", "2025-06-03", "2025-06-04", "2025-06-05", "2025-06-06", "2025-06-07", "2025-06-08", "2025-06-09", "2025-06-10", "2025-06-11", "2025-06-12", "2025-06-13", "2025-06-14", "2025-06-15", "2025-06-16", "2025-06-17", "2025-06-18", "2025-06-19", "2025-06-20", "2025-06-21", "2025-06-22", "2025-06-23", "2025-06-24", "2025-06-25", "2025-06-26", "2025-06-27", "2025-06-28", "2025-06-29", "2025-06-30", "2025-07-01", "2025-07-02", "2025-07-03", "2025-07-04", "2025-07-05", "2025-07-06", "2025-07-07", "2025-07-08", "2025-07-09", "2025-07-10", "2025-07-11", "2025-07-12", "2025-07-13", "2025-07-14", "2025-07-15", "2025-07-16", "2025-07-17", "2025-07-18", "2025-07-19", "2025-07-20", "2025-07-21", "2025-07-22", "2025-07-23", "2025-07-24", "2025-07-25", "2025-07-26", "2025-07-27", "2025-07-28", "2025-07-29", "2025-07-30", "2025-07-31", "2025-08-01", "2025-08-02", "2025-08-03", "2025-08-04", "2025-08-05", "2025-08-06", "2025-08-07", "2025-08-08", "2025-08-09", "2025-08-10", "2025-08-11", "2025-08-12", "2025-08-13", "2025-08-14", "2025-08-15", "2025-08-16", "2025-08-17", "2025-08-18", "2025-08-19", "2025-08-20", "2025-08-21", "2025-08-22", "2025-08-23", "2025-08-24", "2025-08-25", "2025-08-26", "2025-08-27", "2025-08-28", "2025-08-29", "2025-08-30", "2025-08-31", "2025-09-01", "2025-09-02", "2025-09-03", "2025-09-04", "2025-09-05", "2025-09-06", "2025-09-07", "2025-09-08", "2025-09-09", "2025-09-10", "2025-09-11", "2025-09-12", "2025-09-13", "2025-09-14", "2025-09-15", "2025-09-16", "2025-09-17", "2025-09-18", "2025-09-19", "2025-09-20", "2025-09-21", "2025-09-22", "2025-09-23", "2025-09-24", "2025-09-25", "2025-09-26", "2025-09-27", "2025-09-28", "2025-09-29", "2025-09-30", "2025-10-01", "2025-10-02", "2025-10-03", "2025-10-04", "2025-10-05", "2025-10-06", "2025-10-07", "2025-10-08", "2025-10-09", "2025-10-10", "2025-10-11", "2025-10-12", "2025-10-13", "2025-10-14", "2025-10-15", "2025-10-16", "2025-10-17", "2025-10-18", "2025-10-19", "2025-10-20", "2025-10-21", "2025-10-22", "2025-10-23", "2025-10-24", "2025-10-25", "2025-10-26", "2025-10-27", "2025-10-28", "2025-10-29", "2025-10-30", "2025-10-31", "2025-11-01", "2025-11-02", "2025-11-03", "2025-11-04", "2025-11-05", "2025-11-06", "2025-11-07", "2025-11-08", "2025-11-09", "2025-11-10", "2025-11-11", "2025-11-12", "2025-11-13", "2025-11-14", "2025-11-15", "2025-11-16", "2025-11-17", "2025-11-18", "2025-11-19", "2025-11-20", "2025-11-21", "2025-11-22", "2025-11-23", "2025-11-24", "2025-11-25", "2025-11-26", "2025-11-27", "2025-11-28", "2025-11-29", "2025-11-30", "2025-12-01", "2025-12-02", "2025-12-03", "2025-12-04", "2025-12-05", "2025-12-06", "2025-12-07", "2025-12-08", "2025-12-09", "2025-12-10", "2025-12-11", "2025-12-12", "2025-12-13", "2025-12-14", "2025-12-15", "2025-12-16", "2025-12-17", "2025-12-18", "2025-12-19", "2025-12-20", "2025-12-21", "2025-12-22", "2025-12-23", "2025-12-24", "2025-12-25", "2025-12-26", "2025-12-27", "2025-12-28", "2025-12-29", "2025-12-30", "2025-12-31", "2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09", "2026-01-10", "2026-01-11", "2026-01-12", "2026-01-13", "2026-01-14", "2026-01-15", "2026-01-16", "2026-01-17", "2026-01-18", "2026-01-19", "2026-01-20", "2026-01-21", "2026-01-22", "2026-01-23", "2026-01-24", "2026-01-25", "2026-01-26", "2026-01-27", "2026-01-28", "2026-01-29", "2026-01-30", "2026-01-31", "2026-02-01", "2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-07", "2026-02-08", "2026-02-09", "2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13", "2026-02-14", "2026-02-15", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-21", "2026-02-22", "2026-02-23", "2026-02-24", "2026-02-25", "2026-02-26", "2026-02-27", "2026-02-28", "2026-03-01", "2026-03-02", "2026-03-03"], "counts": [0, 2, 2, 3, 4, 2, 3, 8, 9, 14, 12, 14, 14, 14, 16, 15, 19, 19, 18, 17, 18, 25, 23, 29, 29, 28, 19, 19, 22, 22, 21, 21, 21, 19, 19, 20, 23, 23, 22, 23, 20, 20, 22, 22, 16, 17, 18, 17, 18, 18, 19, 20, 24, 20, 17, 18, 21, 20, 17, 20, 20, 18, 18, 19, 19, 21, 17, 16, 15, 15, 18, 15, 17, 17, 16, 16, 16, 17, 20, 18, 18, 17, 17, 17, 19, 18, 17, 20, 19, 18, 18, 18, 18, 19, 19, 21, 19, 19, 20, 22, 20, 20, 23, 22, 22, 23, 20, 20, 18, 20, 18, 18, 18, 16, 17, 16, 16, 14, 16, 17, 17, 16, 17, 18, 15, 15, 16, 20, 17, 15, 16, 15, 15, 19, 19, 19, 22, 23, 21, 21, 21, 22, 23, 28, 25, 22, 22, 23, 20, 22, 24, 23, 21, 21, 26, 26, 24, 24, 22, 22, 22, 25, 29, 25, 24, 23, 19, 19, 22, 20, 16, 16, 16, 15, 15, 17, 17, 18, 22, 19, 15, 15, 18, 17, 19, 19, 19, 17, 17, 19, 19, 20, 18, 16, 17, 17, 20, 20, 22, 22, 17, 14, 14, 16, 15, 16, 17, 16, 15, 15, 18, 15, 16, 14, 14, 9, 9, 11, 13, 15, 16, 18, 17, 17, 17, 17, 18, 17, 17, 16, 16, 16, 17, 17, 16, 17, 16, 16, 20, 21, 18, 18, 19, 17, 17, 22, 19, 19, 22, 20, 17, 17, 19, 19, 20, 20, 21, 18, 18, 19, 18, 17, 20, 17, 17, 17, 19, 19, 21, 23, 26, 22, 22, 24, 25, 27, 24, 26, 21, 21, 23, 21, 22, 21, 22, 20, 20, 22, 23, 25, 29, 33, 29, 29, 30, 32, 33, 30, 29, 25, 25, 27, 28, 32, 31, 30, 30, 31, 33, 33, 35, 31, 33, 31, 31, 29, 33, 34, 36, 37, 32, 32, 31, 38, 39, 33, 33, 30, 30, 33, 33, 34, 34, 34, 34, 34, 36, 35, 34, 35, 39, 36, 38, 38, 41, 41, 35, 32, 31, 31, 37, 38, 37, 34, 33, 31, 31, 35, 32, 30, 35, 36, 33, 33, 35, 36, 36, 41, 42, 41, 41, 45, 49, 51, 49, 50, 43, 43, 47, 48, 50, 52, 50, 45, 45, 51, 53, 51, 49, 51, 50, 50, 54, 54, 50, 48, 48, 47, 47, 47, 47, 46, 44, 46, 42, 42, 44, 42, 44, 38, 38, 34, 34, 37, 36, 37, 37, 39, 37, 37, 42, 41, 36, 41, 37, 34, 34, 38, 38, 36, 34, 36, 34, 34, 35, 33, 31, 35, 32, 28, 28, 32, 30, 36, 36, 36, 35, 35, 36, 33, 34, 34, 31, 30, 31, 33, 33, 35, 31, 31, 30, 30, 31, 26, 25, 28, 28, 27, 28, 33, 35, 33, 36, 38, 35, 35, 35, 38, 39, 40, 42, 40, 40, 40, 37, 36, 32, 33, 31, 31, 32, 35, 32, 30, 31, 28, 29, 34, 31, 30, 31, 33, 31, 31, 35, 33, 31, 35, 34, 29, 30, 32, 30, 33, 32, 33, 33, 35, 36, 34, 33, 32, 32, 30, 30, 30, 36, 34, 30, 33, 32, 32, 34, 34, 34, 37, 40, 37, 36, 37, 38, 41, 44, 43, 40, 40, 42, 39, 42, 44, 41, 37, 37, 41, 41, 41, 40, 45, 42, 42, 45, 43, 41, 42, 43, 40, 40, 40, 41, 39, 38, 38, 34, 35, 36, 37, 35, 36, 38, 36, 37, 38, 33, 33, 34, 34, 31, 32, 33, 32, 34, 36, 33, 33, 33, 33, 34, 33, 35, 38, 35, 35, 35, 35, 34, 36, 35, 33, 33, 33, 37, 39, 38, 36, 30, 30, 33, 33, 33, 34, 31, 29, 29, 29, 33, 34, 35, 34, 34, 34, 36, 36, 39, 39, 37, 35, 35, 41, 45, 43, 38, 40, 37, 37, 40, 40, 44, 40, 42, 40, 40, 45, 45, 47, 44, 41, 39, 39, 43, 47, 49, 50, 47, 44, 44, 47, 49, 52, 48, 47, 41, 41, 43, 39, 45, 44, 49, 45, 45, 46, 43, 49, 50, 48, 45, 45, 48, 48, 46, 45, 46, 39, 39, 41, 41, 38, 38, 33, 32, 32, 36, 41, 36, 35, 37, 35, 36, 37, 34, 29, 30, 34, 31, 31, 35, 35, 32, 29, 30, 28, 28, 30, 28, 27, 27, 29, 28, 28, 31, 37, 37, 35, 36, 36, 37, 39, 38, 43, 44, 49, 44, 44, 47, 47, 49, 49, 52, 50, 50, 53, 50, 47, 48, 48, 48, 48, 52, 55, 53, 46, 45, 43, 43, 43, 44, 40, 46, 48, 44, 44, 46, 44, 46, 43, 40, 37, 37, 39, 39, 37, 35, 34, 31, 31, 34, 33, 35, 35, 39, 39, 39, 43, 39], "rolling": [0.0, 1.0, 1.3, 1.8, 2.2, 2.2, 2.3, 3.4, 4.4, 6.1, 7.4, 8.9, 10.6, 12.1, 13.3, 14.1, 14.9, 15.9, 16.4, 16.9, 17.4, 18.7, 19.9, 21.3, 22.7, 24.1, 24.4, 24.6, 24.1, 24.0, 22.9, 21.7, 20.7, 20.7, 20.7, 20.4, 20.6, 20.9, 21.0, 21.3, 21.4, 21.6, 21.9, 21.7, 20.7, 20.0, 19.3, 18.9, 18.6, 18.0, 17.6, 18.1, 19.1, 19.4, 19.4, 19.4, 19.9, 20.0, 19.6, 19.0, 19.0, 19.1, 19.1, 18.9, 18.7, 19.3, 18.9, 18.3, 17.9, 17.4, 17.3, 16.7, 16.1, 16.1, 16.1, 16.3, 16.4, 16.3, 17.0, 17.1, 17.3, 17.4, 17.6, 17.7, 18.0, 17.7, 17.6, 17.9, 18.1, 18.3, 18.4, 18.3, 18.3, 18.6, 18.4, 18.7, 18.9, 19.0, 19.3, 19.9, 20.0, 20.1, 20.4, 20.9, 21.3, 21.7, 21.4, 21.4, 21.1, 20.7, 20.1, 19.6, 18.9, 18.3, 17.9, 17.6, 17.0, 16.4, 16.1, 16.0, 16.1, 16.0, 16.1, 16.4, 16.6, 16.4, 16.3, 16.7, 16.9, 16.6, 16.3, 16.3, 16.3, 16.7, 16.6, 16.9, 17.9, 18.9, 19.7, 20.6, 20.9, 21.3, 21.9, 22.7, 23.0, 23.1, 23.3, 23.6, 23.3, 23.1, 22.6, 22.3, 22.1, 22.0, 22.4, 23.3, 23.6, 23.6, 23.4, 23.6, 23.7, 23.6, 24.0, 24.1, 24.1, 24.3, 23.9, 23.4, 23.0, 21.7, 20.4, 19.3, 18.3, 17.7, 17.1, 16.4, 16.0, 16.3, 17.1, 17.6, 17.6, 17.6, 17.7, 17.7, 17.9, 17.4, 17.4, 17.7, 18.0, 18.1, 18.4, 18.6, 18.4, 18.0, 18.0, 18.0, 18.1, 18.3, 18.6, 19.1, 19.3, 18.9, 18.4, 17.9, 17.1, 16.3, 15.6, 15.4, 15.6, 15.7, 16.0, 16.0, 16.0, 15.6, 15.3, 14.4, 13.6, 12.6, 12.3, 12.1, 12.4, 13.0, 14.1, 15.3, 16.1, 16.7, 17.1, 17.3, 17.1, 17.0, 16.9, 16.7, 16.7, 16.6, 16.4, 16.4, 16.4, 16.4, 17.0, 17.6, 17.7, 18.0, 18.3, 18.4, 18.6, 18.9, 18.6, 18.7, 19.3, 19.4, 19.4, 19.4, 19.0, 19.0, 19.1, 18.9, 19.0, 19.1, 19.3, 19.3, 19.1, 18.7, 18.7, 18.1, 18.0, 17.9, 17.9, 18.0, 18.6, 19.0, 20.3, 21.0, 21.7, 22.4, 23.3, 24.1, 24.3, 24.3, 24.1, 24.0, 23.9, 23.3, 22.6, 22.1, 21.6, 21.4, 21.3, 21.1, 21.4, 21.9, 23.0, 24.6, 25.9, 27.1, 28.3, 29.6, 30.7, 30.9, 30.3, 29.7, 29.1, 28.7, 28.1, 28.0, 28.1, 28.3, 29.0, 29.9, 30.7, 31.4, 31.9, 31.9, 32.3, 32.4, 32.4, 31.9, 31.9, 31.7, 32.4, 33.0, 33.1, 33.3, 33.6, 34.3, 35.0, 34.6, 34.0, 33.7, 33.4, 33.7, 33.0, 32.3, 32.4, 32.6, 33.1, 33.7, 34.1, 34.4, 34.4, 34.6, 35.3, 35.6, 36.1, 36.4, 37.3, 38.3, 38.3, 37.3, 36.6, 35.6, 35.4, 35.0, 34.4, 34.3, 34.4, 34.4, 34.4, 34.1, 33.3, 32.3, 32.4, 32.9, 33.1, 33.4, 33.4, 34.0, 34.9, 35.7, 36.6, 37.7, 38.9, 40.3, 42.1, 44.3, 45.4, 46.6, 46.9, 47.1, 47.4, 47.3, 47.1, 47.6, 47.6, 47.9, 48.1, 48.7, 49.4, 49.6, 49.1, 49.3, 50.0, 50.7, 51.1, 51.3, 51.1, 51.0, 50.6, 50.1, 49.7, 48.7, 47.7, 47.1, 46.6, 46.3, 45.6, 44.9, 44.4, 43.7, 43.4, 42.6, 41.4, 40.3, 39.1, 38.1, 37.3, 36.3, 36.1, 36.3, 36.7, 37.1, 37.9, 38.6, 38.4, 39.0, 38.7, 38.3, 37.9, 37.3, 36.9, 36.9, 35.9, 35.7, 35.7, 35.7, 35.3, 34.6, 33.9, 34.0, 33.4, 32.6, 31.7, 31.3, 30.9, 31.6, 31.7, 32.3, 33.3, 34.3, 34.9, 35.3, 35.0, 34.7, 34.0, 33.3, 32.7, 32.3, 32.3, 32.4, 32.0, 32.0, 32.0, 31.9, 31.6, 30.6, 29.1, 28.7, 28.3, 27.9, 27.6, 27.9, 29.1, 30.3, 31.4, 32.9, 34.0, 35.0, 35.3, 35.7, 36.6, 37.1, 37.7, 38.4, 39.1, 39.9, 39.7, 39.3, 38.1, 36.9, 35.6, 34.3, 33.1, 32.9, 32.3, 32.0, 31.7, 31.3, 31.0, 31.3, 30.7, 30.4, 30.6, 30.9, 31.3, 31.6, 31.7, 32.0, 32.1, 32.7, 32.9, 32.6, 32.4, 32.0, 31.6, 31.9, 31.4, 31.3, 31.9, 32.6, 33.1, 33.7, 33.7, 33.7, 33.6, 33.1, 32.4, 31.6, 31.9, 32.0, 31.7, 31.9, 32.1, 32.4, 33.0, 32.7, 32.7, 33.7, 34.7, 35.4, 36.0, 36.4, 37.0, 38.0, 39.0, 39.4, 39.9, 40.4, 41.1, 41.3, 41.4, 41.4, 41.1, 40.7, 40.3, 40.1, 40.4, 40.3, 39.7, 40.3, 41.0, 41.7, 42.3, 42.6, 42.6, 42.9, 42.6, 42.3, 42.0, 41.3, 41.0, 40.7, 40.1, 39.4, 38.6, 37.9, 37.3, 36.7, 36.1, 35.9, 35.9, 36.1, 36.4, 36.7, 36.1, 35.9, 35.6, 35.0, 34.3, 33.6, 32.9, 32.7, 32.9, 33.1, 33.0, 33.3, 33.4, 33.4, 33.7, 33.6, 33.4, 34.1, 34.4, 34.7, 35.0, 35.1, 35.3, 35.4, 35.0, 34.7, 34.4, 34.1, 34.4, 35.1, 35.4, 35.6, 35.1, 34.7, 34.7, 34.1, 33.3, 32.7, 32.0, 31.9, 31.7, 31.1, 31.1, 31.3, 31.4, 31.9, 32.6, 33.3, 34.3, 34.7, 35.4, 36.0, 36.4, 36.6, 36.7, 37.4, 38.7, 39.3, 39.1, 39.6, 39.9, 40.1, 40.0, 39.3, 39.4, 39.7, 40.0, 40.4, 40.9, 41.6, 42.3, 42.7, 43.3, 43.1, 43.0, 42.9, 42.6, 42.9, 43.1, 44.0, 44.9, 45.6, 46.3, 46.9, 47.1, 47.6, 47.3, 47.3, 46.9, 46.4, 45.9, 44.4, 43.4, 42.9, 43.1, 43.7, 44.3, 44.7, 45.3, 45.9, 46.7, 46.6, 46.6, 46.6, 46.9, 47.6, 47.1, 46.4, 46.1, 45.3, 44.4, 43.4, 42.4, 41.3, 40.3, 38.4, 37.4, 36.4, 35.7, 35.7, 35.4, 35.0, 35.6, 36.0, 36.6, 36.7, 35.7, 34.7, 34.0, 33.6, 33.0, 32.3, 32.0, 32.1, 32.6, 32.4, 31.9, 31.4, 31.0, 30.3, 29.3, 28.6, 28.3, 28.1, 28.1, 28.1, 28.3, 29.6, 31.0, 32.1, 33.1, 34.3, 35.6, 36.7, 36.9, 37.7, 39.0, 40.9, 42.0, 43.0, 44.1, 45.4, 46.3, 47.0, 47.4, 48.3, 49.1, 50.0, 50.4, 50.1, 50.0, 49.4, 49.1, 48.9, 48.7, 49.4, 50.3, 50.0, 49.6, 48.9, 48.1, 46.9, 45.3, 43.4, 43.4, 43.9, 44.0, 44.1, 44.6, 44.6, 45.4, 45.0, 43.9, 42.9, 41.9, 40.9, 40.1, 38.9, 37.7, 36.9, 36.0, 35.1, 34.4, 33.6, 33.3, 33.3, 34.0, 35.1, 36.3, 37.6, 38.4]}, "maint": {"months": ["2023-12", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06", "2024-07", "2024-08", "2024-09", "2024-10", "2024-11", "2024-12", "2025-01", "2025-02", "2025-03", "2025-04", "2025-05", "2025-06", "2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02"], "vals": [38059.24, 2840.24, 8826.59, 325807.8, 100953.54, 20794.56, 315889.46, 76150.0, 35690.33, 105361.13, 276451.58, 24095.23, 324870.6, 38788.6, 43687.93, 18695.26, 66415.92, 270171.06, 43027.84, 248815.39, 71024.69, 296993.79, 40567.88, 79433.1, 37769.57, 6707.77], "by_cat": {"L27": 614085.42, "S01": 1897909.06, "L20": 63000.96, "L14": 9198.72, "L21": 306481.72, "L18": 25701.87, "T21": 606.01, "L15": 193.12, "L12": 712.22}}, "defects": {"labels": ["Mechanical", "Maintenance", "Technical Control", "Unknown", "Electrical", "Depannage", "Liquids", "Tacho", "Unacceptable Damage", "Other", "Tyre", "Acceptable Damage", "Window", "Order", "Tail lift"], "counts": [493, 206, 170, 101, 99, 98, 43, 42, 39, 28, 28, 14, 13, 13, 12]}, "scatter_age": {"S01": [{"x": 15.4, "y": 2760.0, "plate": "2DJB594"}, {"x": 14.1, "y": 216.0, "plate": "1CNG926"}, {"x": 13.9, "y": 1368.0, "plate": "1DAM099"}, {"x": 13.7, "y": 912.0, "plate": "1DKN388"}, {"x": 13.7, "y": 240.0, "plate": "1DMQ172"}, {"x": 13.6, "y": 336.0, "plate": "1DRT634"}, {"x": 13.6, "y": 72.0, "plate": "1DRT669"}, {"x": 12.3, "y": 912.0, "plate": "1FVM221"}, {"x": 12.3, "y": 960.0, "plate": "1FVM265"}, {"x": 11.3, "y": 4032.0, "plate": "1JAU851"}, {"x": 11.3, "y": 120.0, "plate": "1JAU937"}, {"x": 11.3, "y": 2280.0, "plate": "2AEK519"}, {"x": 11.3, "y": 1968.0, "plate": "1SZD283"}, {"x": 10.0, "y": 1752.0, "plate": "1NKH163"}, {"x": 10.0, "y": 3312.0, "plate": "1NKY619"}, {"x": 10.0, "y": 1224.0, "plate": "1XUN482"}, {"x": 9.9, "y": 1752.0, "plate": "2BFA229"}, {"x": 9.9, "y": 1008.0, "plate": "2CXN764"}, {"x": 9.7, "y": 168.0, "plate": "1TPU046"}, {"x": 9.6, "y": 2376.0, "plate": "1PJT465"}, {"x": 9.6, "y": 240.0, "plate": "1RKN711"}, {"x": 9.1, "y": 1992.0, "plate": "1RNS583"}, {"x": 9.1, "y": 1344.0, "plate": "1RNS587"}, {"x": 9.1, "y": 192.0, "plate": "1RNS592"}, {"x": 9.1, "y": 2400.0, "plate": "1RNS593"}, {"x": 9.0, "y": 1464.0, "plate": "1RVA862"}, {"x": 9.0, "y": 816.0, "plate": "2DXH145"}, {"x": 8.9, "y": 2712.0, "plate": "1RXU971"}, {"x": 8.9, "y": 2832.0, "plate": "1SCH706"}, {"x": 8.9, "y": 1848.0, "plate": "1SCH710"}, {"x": 8.9, "y": 2400.0, "plate": "1SCH723"}, {"x": 8.9, "y": 792.0, "plate": "2BPQ307"}, {"x": 8.5, "y": 912.0, "plate": "1SYX351"}, {"x": 8.5, "y": 2448.0, "plate": "1SYX363"}, {"x": 8.5, "y": 1152.0, "plate": "1TAT312"}, {"x": 8.5, "y": 2112.0, "plate": "1TAT329"}, {"x": 8.4, "y": 1680.0, "plate": "1TCK446"}, {"x": 8.4, "y": 1728.0, "plate": "1TFN925"}, {"x": 8.4, "y": 1032.0, "plate": "1TFN939"}, {"x": 8.4, "y": 3384.0, "plate": "1TFN943"}, {"x": 8.3, "y": 240.0, "plate": "2GMU418"}, {"x": 8.3, "y": 120.0, "plate": "1THU982"}, {"x": 8.3, "y": 2328.0, "plate": "1TKJ909"}, {"x": 8.2, "y": 624.0, "plate": "1TME794"}, {"x": 8.2, "y": 1656.0, "plate": "1TME803"}, {"x": 7.9, "y": 480.0, "plate": "1UEG752"}, {"x": 7.9, "y": 120.0, "plate": "1UEG787"}, {"x": 7.8, "y": 912.0, "plate": "1UFZ229"}, {"x": 7.8, "y": 720.0, "plate": "1UFZ246"}, {"x": 7.8, "y": 984.0, "plate": "1UFZ253"}, {"x": 7.8, "y": 840.0, "plate": "1UJJ610"}, {"x": 7.7, "y": 216.0, "plate": "2AMY426"}, {"x": 7.7, "y": 1008.0, "plate": "1UNE586"}, {"x": 7.7, "y": 1608.0, "plate": "1UNE596"}, {"x": 7.7, "y": 912.0, "plate": "1UNE606"}, {"x": 7.7, "y": 1320.0, "plate": "1UNE636"}, {"x": 7.7, "y": 4416.0, "plate": "1UPT187"}, {"x": 7.7, "y": 984.0, "plate": "1UPT200"}, {"x": 7.7, "y": 1008.0, "plate": "1UPT221"}, {"x": 7.7, "y": 240.0, "plate": "1UPT243"}, {"x": 7.7, "y": 2112.0, "plate": "1UPT259"}, {"x": 7.7, "y": 384.0, "plate": "1UPT283"}, {"x": 7.6, "y": 1392.0, "plate": "1UQR720"}, {"x": 7.6, "y": 1680.0, "plate": "1UQZ040"}, {"x": 7.6, "y": 2160.0, "plate": "1UQZ051"}, {"x": 7.6, "y": 384.0, "plate": "1UQZ071"}, {"x": 7.6, "y": 96.0, "plate": "1UQZ088"}, {"x": 7.6, "y": 960.0, "plate": "1UQZ141"}, {"x": 7.6, "y": 216.0, "plate": "1UQZ159"}, {"x": 7.6, "y": 576.0, "plate": "1UQZ170"}, {"x": 7.6, "y": 696.0, "plate": "1UQZ194"}, {"x": 7.4, "y": 648.0, "plate": "1VDE200"}, {"x": 7.4, "y": 432.0, "plate": "1VEL633"}, {"x": 7.4, "y": 336.0, "plate": "1VEL651"}, {"x": 7.4, "y": 2016.0, "plate": "1VEL658"}, {"x": 7.4, "y": 1968.0, "plate": "1VEL679"}, {"x": 7.4, "y": 1560.0, "plate": "1VEL689"}, {"x": 7.4, "y": 2184.0, "plate": "1VEL692"}, {"x": 7.4, "y": 624.0, "plate": "1VEL700"}, {"x": 6.7, "y": 1008.0, "plate": "1WKH446"}, {"x": 6.7, "y": 648.0, "plate": "1WKH468"}, {"x": 6.7, "y": 456.0, "plate": "1WKH489"}, {"x": 6.7, "y": 72.0, "plate": "1WKH527"}, {"x": 6.7, "y": 1608.0, "plate": "1WKH546"}, {"x": 6.7, "y": 936.0, "plate": "1WKH568"}, {"x": 6.6, "y": 144.0, "plate": "1WMW419"}, {"x": 6.6, "y": 1776.0, "plate": "1WMW428"}, {"x": 6.6, "y": 432.0, "plate": "1WMW505"}, {"x": 6.6, "y": 720.0, "plate": "1WMW528"}, {"x": 6.6, "y": 552.0, "plate": "1WMW537"}, {"x": 6.6, "y": 360.0, "plate": "1WMW542"}, {"x": 6.6, "y": 24.0, "plate": "1WMW576"}, {"x": 6.6, "y": 1176.0, "plate": "1WMW588"}, {"x": 6.6, "y": 744.0, "plate": "1WMW599"}, {"x": 6.4, "y": 1704.0, "plate": "1WVM388"}, {"x": 6.4, "y": 1368.0, "plate": "1WVM405"}, {"x": 6.4, "y": 504.0, "plate": "1WVM466"}, {"x": 6.4, "y": 1152.0, "plate": "1WVM487"}, {"x": 6.4, "y": 72.0, "plate": "1WVM492"}, {"x": 6.4, "y": 600.0, "plate": "1WWF419"}, {"x": 6.4, "y": 312.0, "plate": "1WWF440"}, {"x": 6.4, "y": 5712.0, "plate": "1WWF445"}, {"x": 6.4, "y": 1248.0, "plate": "1WWF454"}, {"x": 6.4, "y": 2016.0, "plate": "1WWF462"}, {"x": 6.4, "y": 168.0, "plate": "1WWF487"}, {"x": 6.4, "y": 696.0, "plate": "1WWF498"}, {"x": 6.4, "y": 648.0, "plate": "1WWF509"}, {"x": 6.3, "y": 120.0, "plate": "1XAS651"}, {"x": 6.3, "y": 864.0, "plate": "1XAS652"}, {"x": 6.3, "y": 816.0, "plate": "1XAS654"}, {"x": 6.3, "y": 1320.0, "plate": "1XAS656"}, {"x": 6.3, "y": 72.0, "plate": "1XAS661"}, {"x": 6.3, "y": 816.0, "plate": "1XAS667"}, {"x": 6.3, "y": 384.0, "plate": "1XAS674"}, {"x": 6.3, "y": 72.0, "plate": "1XAS677"}, {"x": 6.3, "y": 192.0, "plate": "1XAS684"}, {"x": 6.3, "y": 48.0, "plate": "1XAS688"}, {"x": 6.3, "y": 24.0, "plate": "1XAS692"}, {"x": 6.3, "y": 1008.0, "plate": "1XAS697"}, {"x": 6.3, "y": 312.0, "plate": "1XAS705"}, {"x": 6.3, "y": 1008.0, "plate": "1XAS715"}, {"x": 6.3, "y": 288.0, "plate": "1XBB756"}], "L20": [{"x": 14.8, "y": 624.0, "plate": "2AQF109"}, {"x": 14.5, "y": 696.0, "plate": "1FYR802"}, {"x": 14.5, "y": 360.0, "plate": "1FYS816"}, {"x": 12.8, "y": 168.0, "plate": "1GYF220"}, {"x": 12.8, "y": 600.0, "plate": "1GYG069"}, {"x": 12.0, "y": 240.0, "plate": "1GYN087"}, {"x": 12.0, "y": 1032.0, "plate": "1GYM504"}, {"x": 11.9, "y": 6648.0, "plate": "1GYP154"}, {"x": 11.8, "y": 744.0, "plate": "1GYP064"}, {"x": 11.8, "y": 240.0, "plate": "1GYP155"}, {"x": 11.8, "y": 3360.0, "plate": "1GYP063"}, {"x": 11.8, "y": 1680.0, "plate": "1GYP156"}, {"x": 11.8, "y": 936.0, "plate": "1GYP065"}], "L27": [{"x": 10.6, "y": 288.0, "plate": "1CYF364"}, {"x": 10.2, "y": 936.0, "plate": "1CYK092"}, {"x": 9.0, "y": 1560.0, "plate": "1CYX352"}, {"x": 9.0, "y": 1440.0, "plate": "1RSB216"}, {"x": 9.0, "y": 288.0, "plate": "1CYX911"}, {"x": 8.9, "y": 2352.0, "plate": "1CYY395"}, {"x": 8.9, "y": 1560.0, "plate": "1CYY396"}, {"x": 8.9, "y": 192.0, "plate": "1CYY574"}, {"x": 8.9, "y": 1824.0, "plate": "1CYZ064"}, {"x": 8.7, "y": 1320.0, "plate": "1DYA393"}, {"x": 8.7, "y": 648.0, "plate": "1DYA394"}, {"x": 8.5, "y": 936.0, "plate": "1DYC220"}, {"x": 8.5, "y": 1248.0, "plate": "1DYC221"}, {"x": 8.5, "y": 1584.0, "plate": "1DYC222"}, {"x": 8.5, "y": 648.0, "plate": "1DYC559"}, {"x": 8.4, "y": 240.0, "plate": "1DYC870"}, {"x": 8.4, "y": 1008.0, "plate": "1DYC872"}, {"x": 8.4, "y": 1344.0, "plate": "1DYD390"}, {"x": 8.4, "y": 2136.0, "plate": "1DYD477"}, {"x": 8.4, "y": 120.0, "plate": "1DYD478"}, {"x": 8.3, "y": 1608.0, "plate": "1DYD689"}, {"x": 8.3, "y": 720.0, "plate": "1DYD916"}, {"x": 8.3, "y": 528.0, "plate": "1DYE259"}, {"x": 8.0, "y": 2472.0, "plate": "1DYG565"}, {"x": 8.0, "y": 4464.0, "plate": "1DYG767"}, {"x": 8.0, "y": 1608.0, "plate": "1DYG768"}, {"x": 7.9, "y": 528.0, "plate": "1DYG957"}, {"x": 7.9, "y": 1080.0, "plate": "1DYH362"}, {"x": 7.9, "y": 528.0, "plate": "1DYH514"}, {"x": 7.9, "y": 120.0, "plate": "1DYH695"}, {"x": 7.8, "y": 2064.0, "plate": "1DYH888"}, {"x": 7.8, "y": 600.0, "plate": "1DYH889"}, {"x": 7.7, "y": 1584.0, "plate": "1DYJ154"}, {"x": 6.9, "y": 432.0, "plate": "1DYT782"}, {"x": 6.9, "y": 288.0, "plate": "1DYT927"}, {"x": 6.8, "y": 168.0, "plate": "1DYU288"}, {"x": 6.8, "y": 456.0, "plate": "1DYU289"}, {"x": 6.8, "y": 2016.0, "plate": "1DYU485"}, {"x": 6.8, "y": 432.0, "plate": "1DYU486"}, {"x": 6.7, "y": 168.0, "plate": "1DYU965"}, {"x": 6.7, "y": 1344.0, "plate": "1DYV011"}, {"x": 6.7, "y": 696.0, "plate": "1DYV129"}, {"x": 6.7, "y": 1272.0, "plate": "1DYV132"}, {"x": 6.7, "y": 336.0, "plate": "1DYV256"}, {"x": 6.7, "y": 2280.0, "plate": "1DYV257"}, {"x": 6.7, "y": 168.0, "plate": "1DYV308"}, {"x": 6.7, "y": 888.0, "plate": "1DYV424"}, {"x": 6.7, "y": 2400.0, "plate": "1DYV425"}, {"x": 6.7, "y": 600.0, "plate": "1DYV516"}], "L21": [{"x": 8.5, "y": 2160.0, "plate": "1DYC225"}, {"x": 8.5, "y": 1008.0, "plate": "1DYC711"}, {"x": 8.4, "y": 1800.0, "plate": "1DYC998"}, {"x": 8.3, "y": 1080.0, "plate": "1DYD688"}, {"x": 8.3, "y": 1416.0, "plate": "1DYD917"}, {"x": 8.3, "y": 984.0, "plate": "1DYE258"}, {"x": 8.0, "y": 1608.0, "plate": "1DYG564"}, {"x": 7.9, "y": 1968.0, "plate": "1DYG956"}, {"x": 7.9, "y": 936.0, "plate": "1DYH203"}, {"x": 7.9, "y": 1320.0, "plate": "1DYH361"}, {"x": 7.9, "y": 2592.0, "plate": "1DYH513"}, {"x": 6.9, "y": 48.0, "plate": "1DYT928"}, {"x": 6.8, "y": 360.0, "plate": "1DYU290"}, {"x": 6.8, "y": 24.0, "plate": "1DYU484"}, {"x": 6.8, "y": 24.0, "plate": "1DYU604"}, {"x": 6.7, "y": 1440.0, "plate": "1DYV127"}]}, "scatter_km": {"S01": [{"x": 1140.8, "y": 2951.09, "plate": "2DJB594"}, {"x": 1063.8, "y": 416.51, "plate": "1CNG926"}, {"x": 1096.1, "y": 2015.17, "plate": "1CUN379"}, {"x": 1226.3, "y": 2590.81, "plate": "1DAM099"}, {"x": 888.9, "y": 1337.53, "plate": "1DDM395"}, {"x": 1302.5, "y": 2516.41, "plate": "1DKN388"}, {"x": 1041.5, "y": 2725.13, "plate": "1DMQ172"}, {"x": 966.4, "y": 1206.57, "plate": "1DRT634"}, {"x": 1018.1, "y": 5757.29, "plate": "1DRT669"}, {"x": 1066.4, "y": 2479.78, "plate": "1DRT694"}, {"x": 954.1, "y": 3044.67, "plate": "1FVF131"}, {"x": 1249.4, "y": 2740.94, "plate": "1FVM221"}, {"x": 1164.5, "y": 488.97, "plate": "1FVM265"}, {"x": 903.9, "y": 4538.79, "plate": "1JAU851"}, {"x": 1087.4, "y": 2438.92, "plate": "1JAU937"}, {"x": 1001.2, "y": 2524.29, "plate": "2AEK519"}, {"x": 742.8, "y": 928.9, "plate": "1SZD283"}, {"x": 708.7, "y": 2356.1, "plate": "1NKH163"}, {"x": 828.4, "y": 2386.3, "plate": "1NKH218"}, {"x": 822.0, "y": 2431.46, "plate": "1UMT992"}, {"x": 564.8, "y": 3041.38, "plate": "1NKY619"}, {"x": 614.0, "y": 1478.18, "plate": "1XUN482"}, {"x": 956.3, "y": 3044.78, "plate": "2BFA229"}, {"x": 912.6, "y": 4713.43, "plate": "2CXN764"}, {"x": 706.4, "y": 4579.46, "plate": "1VBV187"}, {"x": 823.8, "y": 2077.18, "plate": "1PFN276"}, {"x": 880.2, "y": 3570.06, "plate": "1TPU046"}, {"x": 352.1, "y": 239.42, "plate": "1PJT465"}, {"x": 898.5, "y": 4368.03, "plate": "1RKN711"}, {"x": 882.2, "y": 2570.77, "plate": "2GDS810"}, {"x": 586.6, "y": 6896.3, "plate": "1RNS583"}, {"x": 525.3, "y": 1552.57, "plate": "1RNS587"}, {"x": 881.3, "y": 4934.88, "plate": "1RNS592"}, {"x": 565.4, "y": 2671.92, "plate": "1RNS593"}, {"x": 716.3, "y": 3371.6, "plate": "1RSK708"}, {"x": 716.1, "y": 5898.65, "plate": "1RSL969"}, {"x": 765.7, "y": 4794.33, "plate": "1RVA862"}, {"x": 522.4, "y": 4733.37, "plate": "2DXH145"}, {"x": 614.4, "y": 5670.73, "plate": "1RXU969"}, {"x": 536.6, "y": 3996.37, "plate": "1RXU971"}, {"x": 517.8, "y": 4963.6, "plate": "1SCH706"}, {"x": 664.2, "y": 4665.09, "plate": "1SCH710"}, {"x": 512.6, "y": 4736.69, "plate": "1SCH723"}, {"x": 652.5, "y": 6189.07, "plate": "1SCH727"}, {"x": 406.2, "y": 1941.06, "plate": "2BPQ307"}, {"x": 702.6, "y": 7464.16, "plate": "1SJE503"}, {"x": 353.8, "y": 690.42, "plate": "1SYX351"}, {"x": 924.6, "y": 3224.38, "plate": "1SYX363"}, {"x": 826.0, "y": 3852.65, "plate": "1TAT293"}, {"x": 526.7, "y": 6918.37, "plate": "1TAT312"}, {"x": 541.1, "y": 5435.16, "plate": "1TAT329"}, {"x": 987.7, "y": 2248.91, "plate": "1TCK446"}, {"x": 667.6, "y": 7554.01, "plate": "1TCK452"}, {"x": 563.9, "y": 10573.07, "plate": "1TFN925"}, {"x": 665.3, "y": 5077.8, "plate": "1TFN939"}, {"x": 676.6, "y": 5343.54, "plate": "1TFN943"}, {"x": 791.3, "y": 5393.23, "plate": "1TFN952"}, {"x": 548.2, "y": 411.13, "plate": "2GMU418"}, {"x": 730.2, "y": 5071.85, "plate": "1THU966"}, {"x": 848.9, "y": 6422.65, "plate": "1THU982"}, {"x": 663.3, "y": 5684.07, "plate": "1TKJ857"}, {"x": 777.1, "y": 2636.4, "plate": "1TKJ909"}, {"x": 679.5, "y": 7318.25, "plate": "1TME794"}, {"x": 768.5, "y": 4246.78, "plate": "1TME803"}, {"x": 600.9, "y": 10416.77, "plate": "1UEG706"}, {"x": 468.8, "y": 5488.12, "plate": "1UEG752"}, {"x": 786.5, "y": 6558.04, "plate": "1UEG787"}, {"x": 898.2, "y": 9736.7, "plate": "1UFZ207"}, {"x": 767.3, "y": 3343.17, "plate": "1UFZ229"}, {"x": 560.6, "y": 9004.42, "plate": "1UFZ246"}, {"x": 468.6, "y": 6957.61, "plate": "1UFZ253"}, {"x": 745.1, "y": 2673.97, "plate": "1UJJ544"}, {"x": 759.5, "y": 7253.31, "plate": "1UJJ564"}, {"x": 776.0, "y": 6800.66, "plate": "1UJJ610"}, {"x": 742.3, "y": 8602.39, "plate": "1UJJ632"}, {"x": 533.9, "y": 8997.24, "plate": "1UNE586"}, {"x": 600.0, "y": 9650.88, "plate": "1UNE596"}, {"x": 832.0, "y": 5491.6, "plate": "1UNE606"}, {"x": 743.6, "y": 4772.16, "plate": "1UNE636"}, {"x": 916.1, "y": 7374.61, "plate": "1UNE645"}, {"x": 698.7, "y": 5192.87, "plate": "1UPT131"}, {"x": 566.4, "y": 4804.24, "plate": "1UPT162"}, {"x": 664.8, "y": 8181.21, "plate": "1UPT187"}, {"x": 517.2, "y": 6967.57, "plate": "1UPT200"}, {"x": 603.4, "y": 9253.53, "plate": "1UPT221"}, {"x": 745.0, "y": 8816.19, "plate": "1UPT243"}, {"x": 746.8, "y": 8142.44, "plate": "1UPT259"}, {"x": 772.7, "y": 7315.63, "plate": "1UPT283"}, {"x": 839.0, "y": 8471.74, "plate": "1UPT298"}, {"x": 579.4, "y": 6856.38, "plate": "1UQR720"}, {"x": 417.2, "y": 3058.64, "plate": "1UQZ040"}, {"x": 688.5, "y": 4457.74, "plate": "1UQZ051"}, {"x": 546.3, "y": 7644.83, "plate": "1UQZ071"}, {"x": 500.5, "y": 5757.16, "plate": "1UQZ088"}], "L20": [{"x": 549.0, "y": 1671.44, "plate": "1FYN104"}, {"x": 561.3, "y": 538.19, "plate": "2AKU807"}, {"x": 693.0, "y": 2079.3, "plate": "2AQF109"}, {"x": 508.2, "y": 556.67, "plate": "1FYR801"}, {"x": 557.9, "y": 4939.45, "plate": "1FYS816"}, {"x": 710.0, "y": 1364.19, "plate": "2CPU211"}, {"x": 537.8, "y": 1442.72, "plate": "2CPU237"}, {"x": 396.7, "y": 722.85, "plate": "1GYF108"}, {"x": 411.6, "y": 203.02, "plate": "1GYF194"}, {"x": 243.9, "y": 972.42, "plate": "1GYF220"}, {"x": 345.1, "y": 153.5, "plate": "1GYG069"}, {"x": 455.9, "y": 1946.23, "plate": "1GYL992"}, {"x": 526.9, "y": 630.93, "plate": "1GYM065"}, {"x": 346.0, "y": 109.24, "plate": "1GYN087"}, {"x": 355.2, "y": 1790.07, "plate": "1GYM504"}, {"x": 416.0, "y": 840.58, "plate": "1GYM483"}, {"x": 586.1, "y": 795.26, "plate": "1GYM485"}, {"x": 309.9, "y": 218.48, "plate": "1GYN096"}, {"x": 408.9, "y": 1799.64, "plate": "1GYP154"}, {"x": 349.9, "y": 1062.61, "plate": "1GYP064"}, {"x": 371.7, "y": 1899.75, "plate": "1GYP155"}, {"x": 337.9, "y": 944.68, "plate": "1GYP063"}, {"x": 593.5, "y": 1398.02, "plate": "1GYP089"}, {"x": 343.0, "y": 1951.71, "plate": "1GYP152"}, {"x": 279.5, "y": 1542.81, "plate": "1GYP156"}, {"x": 314.1, "y": 1826.88, "plate": "1GYP065"}, {"x": 487.9, "y": 1869.82, "plate": "1GYP087"}], "L27": [{"x": 435.1, "y": 1175.52, "plate": "1CYF364"}, {"x": 429.6, "y": 3503.42, "plate": "1CYX311"}, {"x": 460.6, "y": 2353.65, "plate": "1CYX352"}, {"x": 429.4, "y": 5642.0, "plate": "1RSB216"}, {"x": 422.5, "y": 5276.34, "plate": "1CYX419"}, {"x": 428.5, "y": 3592.23, "plate": "1CYX420"}, {"x": 408.7, "y": 5257.69, "plate": "1CYX610"}, {"x": 442.7, "y": 3164.92, "plate": "1CYX611"}, {"x": 393.3, "y": 3115.96, "plate": "1CYX911"}, {"x": 615.0, "y": 5255.99, "plate": "1CYX949"}, {"x": 360.3, "y": 2739.37, "plate": "1CYY393"}, {"x": 386.6, "y": 4249.27, "plate": "1CYY395"}, {"x": 400.7, "y": 1679.8, "plate": "1CYY396"}, {"x": 426.5, "y": 3462.12, "plate": "1CYY574"}, {"x": 378.0, "y": 2364.55, "plate": "1CYY575"}, {"x": 382.9, "y": 4471.77, "plate": "1CYZ062"}, {"x": 294.1, "y": 4275.08, "plate": "1CYZ064"}, {"x": 408.7, "y": 2684.7, "plate": "1CYZ336"}, {"x": 550.5, "y": 3578.74, "plate": "1CYZ337"}, {"x": 407.9, "y": 2859.06, "plate": "1DYA393"}, {"x": 399.0, "y": 4308.15, "plate": "1DYA394"}, {"x": 293.1, "y": 5407.08, "plate": "1DYC220"}, {"x": 310.2, "y": 4272.41, "plate": "1DYC221"}, {"x": 329.1, "y": 5694.79, "plate": "1DYC222"}, {"x": 424.4, "y": 5280.96, "plate": "1DYC223"}, {"x": 468.9, "y": 6769.69, "plate": "1DYC559"}, {"x": 365.2, "y": 2774.78, "plate": "1DYC560"}, {"x": 507.1, "y": 5939.23, "plate": "1DYC870"}, {"x": 476.9, "y": 3342.34, "plate": "1DYC872"}, {"x": 375.1, "y": 5037.05, "plate": "1DYC874"}, {"x": 474.1, "y": 4028.17, "plate": "1DYC901"}, {"x": 466.9, "y": 4573.91, "plate": "1DYD390"}, {"x": 356.1, "y": 2399.23, "plate": "1DYD477"}, {"x": 327.2, "y": 1121.15, "plate": "1DYD478"}, {"x": 485.7, "y": 3059.86, "plate": "1DYD689"}, {"x": 438.1, "y": 4709.13, "plate": "1DYD916"}, {"x": 334.1, "y": 4578.16, "plate": "1DYE259"}, {"x": 428.7, "y": 5314.93, "plate": "1DYE260"}, {"x": 494.0, "y": 6131.76, "plate": "1DYE351"}, {"x": 269.4, "y": 5731.98, "plate": "1TMZ741"}, {"x": 285.3, "y": 3354.07, "plate": "1DYG565"}, {"x": 433.9, "y": 5746.16, "plate": "1DYG767"}, {"x": 388.9, "y": 7147.32, "plate": "1DYG768"}, {"x": 346.9, "y": 2897.21, "plate": "1DYG769"}, {"x": 303.0, "y": 7745.16, "plate": "1DYG957"}, {"x": 269.2, "y": 6646.6, "plate": "1DYG958"}, {"x": 221.6, "y": 5744.55, "plate": "1DYH205"}, {"x": 350.6, "y": 3762.77, "plate": "1DYH362"}, {"x": 421.0, "y": 4913.46, "plate": "1DYH514"}, {"x": 422.3, "y": 3169.16, "plate": "1DYH695"}, {"x": 403.0, "y": 2017.86, "plate": "1DYH888"}, {"x": 388.1, "y": 6278.06, "plate": "1DYH889"}, {"x": 390.5, "y": 4440.0, "plate": "1DYH977"}, {"x": 386.1, "y": 4252.86, "plate": "1DYJ154"}], "L21": [{"x": 324.7, "y": 5203.83, "plate": "1DYC224"}, {"x": 258.5, "y": 3195.8, "plate": "1DYC225"}, {"x": 266.1, "y": 1993.22, "plate": "1DYC710"}, {"x": 209.0, "y": 1876.1, "plate": "1DYC711"}, {"x": 353.0, "y": 4728.37, "plate": "1DYC844"}, {"x": 367.6, "y": 6230.06, "plate": "1DYC846"}, {"x": 251.7, "y": 2800.89, "plate": "1DYC998"}, {"x": 258.0, "y": 3048.69, "plate": "1DYD060"}, {"x": 258.1, "y": 4296.65, "plate": "1DYD165"}, {"x": 210.9, "y": 3992.08, "plate": "1DYD166"}, {"x": 359.8, "y": 7478.57, "plate": "1DYD167"}, {"x": 387.7, "y": 3773.29, "plate": "1DYD536"}, {"x": 343.6, "y": 4564.37, "plate": "1DYD688"}, {"x": 296.2, "y": 5261.8, "plate": "1DYD917"}, {"x": 282.4, "y": 4691.13, "plate": "1DYE258"}, {"x": 371.4, "y": 4192.64, "plate": "1DYG562"}, {"x": 237.8, "y": 649.89, "plate": "1DYG564"}, {"x": 290.6, "y": 3427.89, "plate": "1DYG766"}, {"x": 433.9, "y": 4670.97, "plate": "1DYG876"}, {"x": 175.2, "y": 2502.4, "plate": "1DYG956"}, {"x": 382.3, "y": 4592.56, "plate": "1DYH202"}, {"x": 213.5, "y": 2412.89, "plate": "1DYH203"}, {"x": 324.8, "y": 2972.22, "plate": "1DYH360"}, {"x": 238.0, "y": 1038.98, "plate": "1DYH361"}, {"x": 243.1, "y": 2093.99, "plate": "1DYH513"}]}, "fleet": {"total": 629, "by_cat": {"L21": 76, "S01": 394, "L27": 130, "L20": 29}}, "avg_daily_out": 30.6, "down_by_cat": {"S01": 1045.2, "L20": 1242.9, "L27": 1036.1, "L21": 810.7}, "table": [{"plate": "1FYT951", "int_cat": "L27", "brand": "VOLV", "model": "FL.250", "reg_date": "2021-12-06", "km": 189823, "age_years": 4.2, "total_maint_cost": 8128.99, "total_downtime_hours": 7320.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1YRP289", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-11-18", "km": 423619, "age_years": 5.3, "total_maint_cost": 8113.01, "total_downtime_hours": 6888.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1GYP154", "int_cat": "L20", "brand": "VOLV", "model": "FLH.240.16", "reg_date": "2014-04-25", "km": 408860, "age_years": 11.9, "total_maint_cost": 1799.64, "total_downtime_hours": 6648.0, "activity_center": "TSP REG LIE LUX", "entity": "2730 TRANSPORT LIEGE"}, {"plate": "2FSE115", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-08-01", "km": 38679, "age_years": 1.6, "total_maint_cost": 655.61, "total_downtime_hours": 6168.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2FTK573", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-08-19", "km": 44554, "age_years": 1.5, "total_maint_cost": 728.99, "total_downtime_hours": 5976.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1WWF445", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-10-04", "km": 340942, "age_years": 6.4, "total_maint_cost": 7248.99, "total_downtime_hours": 5712.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1YSV202", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-12-01", "km": 350804, "age_years": 5.3, "total_maint_cost": 5177.11, "total_downtime_hours": 4800.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1DYG767", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2018-03-16", "km": 433853, "age_years": 8.0, "total_maint_cost": 5746.16, "total_downtime_hours": 4464.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1UPT187", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-07-03", "km": 664769, "age_years": 7.7, "total_maint_cost": 8181.21, "total_downtime_hours": 4416.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1JAU851", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2014-11-19", "km": 903917, "age_years": 11.3, "total_maint_cost": 4538.79, "total_downtime_hours": 4032.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1TFN943", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-10-20", "km": 676633, "age_years": 8.4, "total_maint_cost": 5343.54, "total_downtime_hours": 3384.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1GYP063", "int_cat": "L20", "brand": "VOLV", "model": "FLH.240.16", "reg_date": "2014-05-19", "km": 337918, "age_years": 11.8, "total_maint_cost": 944.68, "total_downtime_hours": 3360.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2FSE490", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-08-01", "km": 50872, "age_years": 1.6, "total_maint_cost": 1278.68, "total_downtime_hours": 3360.0, "activity_center": "TSP REG O&W VL", "entity": "2430 TRANSPORT GENT"}, {"plate": "1NKY619", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2016-03-15", "km": 564790, "age_years": 10.0, "total_maint_cost": 3041.38, "total_downtime_hours": 3312.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1SCH706", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-04-07", "km": 517815, "age_years": 8.9, "total_maint_cost": 4963.6, "total_downtime_hours": 2832.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1YSV252", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-12-01", "km": 532855, "age_years": 5.3, "total_maint_cost": 7392.74, "total_downtime_hours": 2808.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2DJB594", "int_cat": "S01", "brand": "RVI", "model": "PREMIUM 380 EEV", "reg_date": "2010-10-04", "km": 1140802, "age_years": 15.4, "total_maint_cost": 2951.09, "total_downtime_hours": 2760.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1RXU971", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-03-22", "km": 536555, "age_years": 8.9, "total_maint_cost": 3996.37, "total_downtime_hours": 2712.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYH513", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2018-04-16", "km": 243069, "age_years": 7.9, "total_maint_cost": 2093.99, "total_downtime_hours": 2592.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYG565", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2018-03-12", "km": 285327, "age_years": 8.0, "total_maint_cost": 3354.07, "total_downtime_hours": 2472.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1SYX363", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-08-23", "km": 924639, "age_years": 8.5, "total_maint_cost": 3224.38, "total_downtime_hours": 2448.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1RNS593", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-01-31", "km": 565433, "age_years": 9.1, "total_maint_cost": 2671.92, "total_downtime_hours": 2400.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1SCH723", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-04-07", "km": 512578, "age_years": 8.9, "total_maint_cost": 4736.69, "total_downtime_hours": 2400.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYV425", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2019-06-21", "km": 217034, "age_years": 6.7, "total_maint_cost": 3853.01, "total_downtime_hours": 2400.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1PJT465", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2016-07-18", "km": 352104, "age_years": 9.6, "total_maint_cost": 239.42, "total_downtime_hours": 2376.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1CYY395", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-03-27", "km": 386570, "age_years": 8.9, "total_maint_cost": 4249.27, "total_downtime_hours": 2352.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1TKJ909", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-11-28", "km": 777061, "age_years": 8.3, "total_maint_cost": 2636.4, "total_downtime_hours": 2328.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2DLC065", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2023-04-13", "km": 239837, "age_years": 2.9, "total_maint_cost": 5133.98, "total_downtime_hours": 2328.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2AEK519", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2014-11-19", "km": 1001178, "age_years": 11.3, "total_maint_cost": 2524.29, "total_downtime_hours": 2280.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1DYV257", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2019-06-14", "km": 389338, "age_years": 6.7, "total_maint_cost": 4638.31, "total_downtime_hours": 2280.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "2GCB134", "int_cat": "S01", "brand": "LEASING", "model": "TRACTOR", "reg_date": "2024-06-19", "km": 59158, "age_years": 1.7, "total_maint_cost": 0, "total_downtime_hours": 2208.0, "activity_center": "LOGISTIC ANTENNE LIMBURG", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1VEL692", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-10-12", "km": 453613, "age_years": 7.4, "total_maint_cost": 6373.15, "total_downtime_hours": 2184.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1DYC225", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2017-08-29", "km": 258490, "age_years": 8.5, "total_maint_cost": 3195.8, "total_downtime_hours": 2160.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1UQZ051", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-07-13", "km": 688481, "age_years": 7.6, "total_maint_cost": 4457.74, "total_downtime_hours": 2160.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYD477", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-10-20", "km": 356116, "age_years": 8.4, "total_maint_cost": 2399.23, "total_downtime_hours": 2136.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1TAT329", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-09-07", "km": 541065, "age_years": 8.5, "total_maint_cost": 5435.16, "total_downtime_hours": 2112.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1UPT259", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-07-03", "km": 746814, "age_years": 7.7, "total_maint_cost": 8142.44, "total_downtime_hours": 2112.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1DYH888", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2018-04-27", "km": 402968, "age_years": 7.8, "total_maint_cost": 2017.86, "total_downtime_hours": 2064.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2DJC654", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2023-03-27", "km": 277813, "age_years": 2.9, "total_maint_cost": 7667.8, "total_downtime_hours": 2064.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1YRA471", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-11-12", "km": 308290, "age_years": 5.3, "total_maint_cost": 5424.91, "total_downtime_hours": 2040.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1VEL658", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-10-12", "km": 562764, "age_years": 7.4, "total_maint_cost": 8324.72, "total_downtime_hours": 2016.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYU485", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2019-05-10", "km": 266377, "age_years": 6.8, "total_maint_cost": 3666.11, "total_downtime_hours": 2016.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1WWF462", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-10-04", "km": 235998, "age_years": 6.4, "total_maint_cost": 6244.6, "total_downtime_hours": 2016.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1FYT507", "int_cat": "L27", "brand": "VOLV", "model": "FL.250", "reg_date": "2021-11-16", "km": 249802, "age_years": 4.3, "total_maint_cost": 12056.34, "total_downtime_hours": 2016.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2GCS829", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-10-28", "km": 34095, "age_years": 1.3, "total_maint_cost": 346.42, "total_downtime_hours": 2016.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1RNS583", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-01-31", "km": 586644, "age_years": 9.1, "total_maint_cost": 6896.3, "total_downtime_hours": 1992.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1YUJ222", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-12-17", "km": 332439, "age_years": 5.2, "total_maint_cost": 6586.5, "total_downtime_hours": 1992.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1SZD283", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2014-12-01", "km": 742758, "age_years": 11.3, "total_maint_cost": 928.9, "total_downtime_hours": 1968.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYG956", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2018-03-23", "km": 175221, "age_years": 7.9, "total_maint_cost": 2502.4, "total_downtime_hours": 1968.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1VEL679", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-10-12", "km": 777867, "age_years": 7.4, "total_maint_cost": 5328.81, "total_downtime_hours": 1968.0, "activity_center": "TSP REG LIE LUX", "entity": "2730 TRANSPORT LIEGE"}, {"plate": "2FPR920", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-07-04", "km": 89140, "age_years": 1.7, "total_maint_cost": 1186.43, "total_downtime_hours": 1968.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2FPL069", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-07-02", "km": 23293, "age_years": 1.7, "total_maint_cost": 320.25, "total_downtime_hours": 1944.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2CFS157", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS LNG", "reg_date": "2022-07-06", "km": 148728, "age_years": 3.7, "total_maint_cost": 4564.15, "total_downtime_hours": 1920.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1SCH710", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-04-07", "km": 664184, "age_years": 8.9, "total_maint_cost": 4665.09, "total_downtime_hours": 1848.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1CYZ064", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-04-24", "km": 294147, "age_years": 8.9, "total_maint_cost": 4275.08, "total_downtime_hours": 1824.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1YSG778", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-11-26", "km": 359615, "age_years": 5.3, "total_maint_cost": 7653.43, "total_downtime_hours": 1824.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1DYC998", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2017-10-02", "km": 251724, "age_years": 8.4, "total_maint_cost": 2800.89, "total_downtime_hours": 1800.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2FWY029", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-09-23", "km": 91260, "age_years": 1.4, "total_maint_cost": 1025.59, "total_downtime_hours": 1800.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1WMW428", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-07-16", "km": 464910, "age_years": 6.6, "total_maint_cost": 4915.72, "total_downtime_hours": 1776.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1NKH163", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2016-03-10", "km": 708674, "age_years": 10.0, "total_maint_cost": 2356.1, "total_downtime_hours": 1752.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2BFA229", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2016-03-23", "km": 956285, "age_years": 9.9, "total_maint_cost": 3044.78, "total_downtime_hours": 1752.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1GYT334", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2025-01-22", "km": 48268, "age_years": 1.1, "total_maint_cost": 1078.78, "total_downtime_hours": 1752.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1TFN925", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-10-20", "km": 563893, "age_years": 8.4, "total_maint_cost": 10573.07, "total_downtime_hours": 1728.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1GYK399", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2023-12-15", "km": 33085, "age_years": 2.2, "total_maint_cost": 1400.74, "total_downtime_hours": 1728.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1WVM388", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-09-27", "km": 494825, "age_years": 6.4, "total_maint_cost": 8369.68, "total_downtime_hours": 1704.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2CJL691", "int_cat": "S01", "brand": "LEASING", "model": "TRACTOR", "reg_date": "2020-06-01", "km": 167251, "age_years": 5.8, "total_maint_cost": 0, "total_downtime_hours": 1704.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1GYP156", "int_cat": "L20", "brand": "VOLV", "model": "FLH.240.16", "reg_date": "2014-05-19", "km": 279484, "age_years": 11.8, "total_maint_cost": 1542.81, "total_downtime_hours": 1680.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1TCK446", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-09-22", "km": 987692, "age_years": 8.4, "total_maint_cost": 2248.91, "total_downtime_hours": 1680.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1UQZ040", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-07-13", "km": 417153, "age_years": 7.6, "total_maint_cost": 3058.64, "total_downtime_hours": 1680.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1YTN135", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-12-09", "km": 345285, "age_years": 5.2, "total_maint_cost": 7638.58, "total_downtime_hours": 1680.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1TME803", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-12-11", "km": 768479, "age_years": 8.2, "total_maint_cost": 4246.78, "total_downtime_hours": 1656.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1YRA446", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-11-18", "km": 605937, "age_years": 5.3, "total_maint_cost": 9840.09, "total_downtime_hours": 1656.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1FYT957", "int_cat": "L27", "brand": "VOLV", "model": "FL.250", "reg_date": "2021-12-06", "km": 243607, "age_years": 4.2, "total_maint_cost": 13993.34, "total_downtime_hours": 1656.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2FPL038", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-07-02", "km": 42685, "age_years": 1.7, "total_maint_cost": 501.33, "total_downtime_hours": 1656.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1FYT953", "int_cat": "L27", "brand": "VOLV", "model": "FL.250", "reg_date": "2021-12-06", "km": 242523, "age_years": 4.2, "total_maint_cost": 13634.12, "total_downtime_hours": 1632.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYD689", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-11-02", "km": 485653, "age_years": 8.3, "total_maint_cost": 3059.86, "total_downtime_hours": 1608.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1DYG564", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2018-03-12", "km": 237783, "age_years": 8.0, "total_maint_cost": 649.89, "total_downtime_hours": 1608.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYG768", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2018-03-16", "km": 388934, "age_years": 8.0, "total_maint_cost": 7147.32, "total_downtime_hours": 1608.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1UNE596", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-06-20", "km": 599997, "age_years": 7.7, "total_maint_cost": 9650.88, "total_downtime_hours": 1608.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1WKH546", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-06-24", "km": 601941, "age_years": 6.7, "total_maint_cost": 10498.71, "total_downtime_hours": 1608.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "2FXF945", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-09-25", "km": 78561, "age_years": 1.4, "total_maint_cost": 722.35, "total_downtime_hours": 1608.0, "activity_center": "TSP REG LIE LUX", "entity": "2730 TRANSPORT LIEGE"}, {"plate": "1DYC222", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-08-29", "km": 329109, "age_years": 8.5, "total_maint_cost": 5694.79, "total_downtime_hours": 1584.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1DYJ154", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2018-06-09", "km": 386076, "age_years": 7.7, "total_maint_cost": 4252.86, "total_downtime_hours": 1584.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1CYX352", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-02-16", "km": 460551, "age_years": 9.0, "total_maint_cost": 2353.65, "total_downtime_hours": 1560.0, "activity_center": "TSP REG O&W VL", "entity": "2430 TRANSPORT GENT"}, {"plate": "1CYY396", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-03-27", "km": 400667, "age_years": 8.9, "total_maint_cost": 1679.8, "total_downtime_hours": 1560.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1VEL689", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-10-12", "km": 341614, "age_years": 7.4, "total_maint_cost": 3975.24, "total_downtime_hours": 1560.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1RVA862", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-03-09", "km": 765659, "age_years": 9.0, "total_maint_cost": 4794.33, "total_downtime_hours": 1464.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2FPS056", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-07-04", "km": 34565, "age_years": 1.7, "total_maint_cost": 698.97, "total_downtime_hours": 1464.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1RSB216", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-02-16", "km": 429375, "age_years": 9.0, "total_maint_cost": 5642.0, "total_downtime_hours": 1440.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYV127", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2019-06-07", "km": 167538, "age_years": 6.7, "total_maint_cost": 3039.02, "total_downtime_hours": 1440.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYD917", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2017-11-13", "km": 296162, "age_years": 8.3, "total_maint_cost": 5261.8, "total_downtime_hours": 1416.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2GCS789", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-10-28", "km": 29006, "age_years": 1.3, "total_maint_cost": 304.62, "total_downtime_hours": 1416.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1UQR720", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-07-11", "km": 579421, "age_years": 7.6, "total_maint_cost": 6856.38, "total_downtime_hours": 1392.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2GAP951", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-10-08", "km": 103645, "age_years": 1.4, "total_maint_cost": 2264.21, "total_downtime_hours": 1392.0, "activity_center": "TSP REG LIE LUX", "entity": "2730 TRANSPORT LIEGE"}, {"plate": "1DAM099", "int_cat": "S01", "brand": "SCAN", "model": "P420", "reg_date": "2012-03-27", "km": 1226289, "age_years": 13.9, "total_maint_cost": 2590.81, "total_downtime_hours": 1368.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1WVM405", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-09-27", "km": 468087, "age_years": 6.4, "total_maint_cost": 5952.5, "total_downtime_hours": 1368.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2GFU624", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2023-05-30", "km": 275083, "age_years": 2.8, "total_maint_cost": 6248.23, "total_downtime_hours": 1368.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2FPS133", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-07-04", "km": 32379, "age_years": 1.7, "total_maint_cost": 349.4, "total_downtime_hours": 1368.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2GKX400", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2025-01-14", "km": 50297, "age_years": 1.1, "total_maint_cost": 475.82, "total_downtime_hours": 1368.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1RNS587", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-01-31", "km": 525312, "age_years": 9.1, "total_maint_cost": 1552.57, "total_downtime_hours": 1344.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1DYD390", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-10-17", "km": 466904, "age_years": 8.4, "total_maint_cost": 4573.91, "total_downtime_hours": 1344.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1DYV011", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2019-06-04", "km": 347845, "age_years": 6.7, "total_maint_cost": 4178.74, "total_downtime_hours": 1344.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1DYA393", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-06-12", "km": 407939, "age_years": 8.7, "total_maint_cost": 2859.06, "total_downtime_hours": 1320.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYH361", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2018-04-09", "km": 238007, "age_years": 7.9, "total_maint_cost": 1038.98, "total_downtime_hours": 1320.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1UNE636", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-06-20", "km": 743608, "age_years": 7.7, "total_maint_cost": 4772.16, "total_downtime_hours": 1320.0, "activity_center": "TSP REG LIE LUX", "entity": "2730 TRANSPORT LIEGE"}, {"plate": "1XAS656", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-10-29", "km": 313867, "age_years": 6.3, "total_maint_cost": 3846.45, "total_downtime_hours": 1320.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2GKX363", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2025-01-14", "km": 40495, "age_years": 1.1, "total_maint_cost": 320.28, "total_downtime_hours": 1296.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYV132", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2019-06-07", "km": 294242, "age_years": 6.7, "total_maint_cost": 5512.71, "total_downtime_hours": 1272.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2FTK709", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-08-19", "km": 104276, "age_years": 1.5, "total_maint_cost": 1491.83, "total_downtime_hours": 1272.0, "activity_center": "LOGISTIC ANTENNE LIMBURG", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYC221", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-08-29", "km": 310186, "age_years": 8.5, "total_maint_cost": 4272.41, "total_downtime_hours": 1248.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1WWF454", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-10-04", "km": 517867, "age_years": 6.4, "total_maint_cost": 4628.67, "total_downtime_hours": 1248.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2EPG710", "int_cat": "S01", "brand": "LEASING", "model": "TRACTOR", "reg_date": "2023-12-08", "km": 161591, "age_years": 2.2, "total_maint_cost": 0, "total_downtime_hours": 1248.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2FXV714", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-10-01", "km": 137480, "age_years": 1.4, "total_maint_cost": 1898.45, "total_downtime_hours": 1248.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1XUN482", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2016-03-15", "km": 613988, "age_years": 10.0, "total_maint_cost": 1478.18, "total_downtime_hours": 1224.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1FYT626", "int_cat": "L27", "brand": "VOLV", "model": "FL.250", "reg_date": "2021-11-22", "km": 218784, "age_years": 4.3, "total_maint_cost": 11172.51, "total_downtime_hours": 1224.0, "activity_center": "LOGISTIC ANTENNE LIMBURG", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2HVK342", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2023-04-26", "km": 106263, "age_years": 2.9, "total_maint_cost": 1427.89, "total_downtime_hours": 1200.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1WMW588", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-07-16", "km": 427015, "age_years": 6.6, "total_maint_cost": 4250.05, "total_downtime_hours": 1176.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1YRM792", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-11-18", "km": 273491, "age_years": 5.3, "total_maint_cost": 5024.79, "total_downtime_hours": 1176.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2CFU707", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS LNG", "reg_date": "2022-07-07", "km": 129773, "age_years": 3.7, "total_maint_cost": 4424.98, "total_downtime_hours": 1176.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1TAT312", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-09-07", "km": 526747, "age_years": 8.5, "total_maint_cost": 6918.37, "total_downtime_hours": 1152.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1WVM487", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-09-27", "km": 587504, "age_years": 6.4, "total_maint_cost": 9436.56, "total_downtime_hours": 1152.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "2DVP548", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2023-07-06", "km": 65079, "age_years": 2.7, "total_maint_cost": 1224.65, "total_downtime_hours": 1152.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1GYR971", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2024-11-18", "km": 13661, "age_years": 1.3, "total_maint_cost": 227.89, "total_downtime_hours": 1128.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYD688", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2017-11-02", "km": 343551, "age_years": 8.3, "total_maint_cost": 4564.37, "total_downtime_hours": 1080.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1DYH362", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2018-04-09", "km": 350553, "age_years": 7.9, "total_maint_cost": 3762.77, "total_downtime_hours": 1080.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1XBB763", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS LNG", "reg_date": "2019-10-31", "km": 338278, "age_years": 6.3, "total_maint_cost": 8162.3, "total_downtime_hours": 1080.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1YRA453", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-11-12", "km": 503530, "age_years": 5.3, "total_maint_cost": 10157.7, "total_downtime_hours": 1080.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "2FSE045", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-08-01", "km": 108452, "age_years": 1.6, "total_maint_cost": 1253.98, "total_downtime_hours": 1080.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1GYR712", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2024-10-30", "km": 13128, "age_years": 1.3, "total_maint_cost": 338.74, "total_downtime_hours": 1080.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1FYT787", "int_cat": "L27", "brand": "VOLV", "model": "FL.250", "reg_date": "2021-11-29", "km": 217260, "age_years": 4.3, "total_maint_cost": 10535.37, "total_downtime_hours": 1056.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1GYM504", "int_cat": "L20", "brand": "VOLV", "model": "FLH.240.16", "reg_date": "2014-03-03", "km": 355208, "age_years": 12.0, "total_maint_cost": 1790.07, "total_downtime_hours": 1032.0, "activity_center": "TSP REG O&W VL", "entity": "2430 TRANSPORT GENT"}, {"plate": "1TFN939", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-10-20", "km": 665267, "age_years": 8.4, "total_maint_cost": 5077.8, "total_downtime_hours": 1032.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2DLC092", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2023-04-13", "km": 96707, "age_years": 2.9, "total_maint_cost": 1345.35, "total_downtime_hours": 1032.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1GYS377", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2024-12-12", "km": 56763, "age_years": 1.2, "total_maint_cost": 1259.8, "total_downtime_hours": 1032.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2CXN764", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2016-04-04", "km": 912603, "age_years": 9.9, "total_maint_cost": 4713.43, "total_downtime_hours": 1008.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1DYC711", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2017-09-19", "km": 208951, "age_years": 8.5, "total_maint_cost": 1876.1, "total_downtime_hours": 1008.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1DYC872", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-09-26", "km": 476934, "age_years": 8.4, "total_maint_cost": 3342.34, "total_downtime_hours": 1008.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1UNE586", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-06-20", "km": 533894, "age_years": 7.7, "total_maint_cost": 8997.24, "total_downtime_hours": 1008.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1UPT221", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-07-03", "km": 603408, "age_years": 7.7, "total_maint_cost": 9253.53, "total_downtime_hours": 1008.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1WKH446", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-06-24", "km": 452569, "age_years": 6.7, "total_maint_cost": 5924.78, "total_downtime_hours": 1008.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1XAS697", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-10-29", "km": 314203, "age_years": 6.3, "total_maint_cost": 6563.92, "total_downtime_hours": 1008.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1XAS715", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-10-29", "km": 369155, "age_years": 6.3, "total_maint_cost": 6584.42, "total_downtime_hours": 1008.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1YRP469", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-11-18", "km": 509258, "age_years": 5.3, "total_maint_cost": 13168.03, "total_downtime_hours": 1008.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "2DSC060", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2023-06-08", "km": 160187, "age_years": 2.7, "total_maint_cost": 2496.6, "total_downtime_hours": 1008.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1DYE258", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2017-11-28", "km": 282405, "age_years": 8.3, "total_maint_cost": 4691.13, "total_downtime_hours": 984.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1UFZ253", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-04-27", "km": 468578, "age_years": 7.8, "total_maint_cost": 6957.61, "total_downtime_hours": 984.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1UPT200", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-07-03", "km": 517204, "age_years": 7.7, "total_maint_cost": 6967.57, "total_downtime_hours": 984.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2DSB950", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2023-06-08", "km": 46802, "age_years": 2.7, "total_maint_cost": 478.14, "total_downtime_hours": 984.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1FVM265", "int_cat": "S01", "brand": "SCAN", "model": "P420", "reg_date": "2013-11-07", "km": 1164461, "age_years": 12.3, "total_maint_cost": 488.97, "total_downtime_hours": 960.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1UQZ141", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-07-13", "km": 417680, "age_years": 7.6, "total_maint_cost": 4848.35, "total_downtime_hours": 960.0, "activity_center": "LOGISTIC ANTENNE LIMBURG", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2EPG709", "int_cat": "S01", "brand": "LEASING", "model": "TRACTOR", "reg_date": "2023-12-08", "km": 187692, "age_years": 2.2, "total_maint_cost": 0, "total_downtime_hours": 960.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1GYP065", "int_cat": "L20", "brand": "VOLV", "model": "FLH.240.16", "reg_date": "2014-05-22", "km": 314067, "age_years": 11.8, "total_maint_cost": 1826.88, "total_downtime_hours": 936.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1CYK092", "int_cat": "L27", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2016-01-05", "km": 388084, "age_years": 10.2, "total_maint_cost": 0, "total_downtime_hours": 936.0, "activity_center": "LOGISTIC ANTENNE LIMBURG", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DYC220", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-08-29", "km": 293144, "age_years": 8.5, "total_maint_cost": 5407.08, "total_downtime_hours": 936.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1DYH203", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2018-04-03", "km": 213543, "age_years": 7.9, "total_maint_cost": 2412.89, "total_downtime_hours": 936.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1WKH568", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-06-24", "km": 459060, "age_years": 6.7, "total_maint_cost": 8701.59, "total_downtime_hours": 936.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1GYK433", "int_cat": "L21", "brand": "VOLV", "model": "FL.250", "reg_date": "2023-12-18", "km": 88124, "age_years": 2.2, "total_maint_cost": 8105.04, "total_downtime_hours": 936.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2FSE202", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-08-01", "km": 60439, "age_years": 1.6, "total_maint_cost": 957.51, "total_downtime_hours": 936.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1GYR706", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2024-10-30", "km": 63890, "age_years": 1.3, "total_maint_cost": 1578.85, "total_downtime_hours": 936.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1DKN388", "int_cat": "S01", "brand": "SCAN", "model": "P420", "reg_date": "2012-06-11", "km": 1302511, "age_years": 13.7, "total_maint_cost": 2516.41, "total_downtime_hours": 912.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1FVM221", "int_cat": "S01", "brand": "SCAN", "model": "P420", "reg_date": "2013-11-07", "km": 1249419, "age_years": 12.3, "total_maint_cost": 2740.94, "total_downtime_hours": 912.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1SYX351", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-08-23", "km": 353799, "age_years": 8.5, "total_maint_cost": 690.42, "total_downtime_hours": 912.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1UFZ229", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-04-27", "km": 767281, "age_years": 7.8, "total_maint_cost": 3343.17, "total_downtime_hours": 912.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1UNE606", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-06-20", "km": 832041, "age_years": 7.7, "total_maint_cost": 5491.6, "total_downtime_hours": 912.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1YSG787", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-11-26", "km": 242963, "age_years": 5.3, "total_maint_cost": 4478.4, "total_downtime_hours": 912.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2GKX472", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2025-01-14", "km": 105270, "age_years": 1.1, "total_maint_cost": 1142.38, "total_downtime_hours": 912.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1DYV424", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2019-06-21", "km": 297522, "age_years": 6.7, "total_maint_cost": 4316.19, "total_downtime_hours": 888.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1YSV241", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-12-01", "km": 263795, "age_years": 5.3, "total_maint_cost": 1722.7, "total_downtime_hours": 888.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1FYT430", "int_cat": "L27", "brand": "VOLV", "model": "FL.250", "reg_date": "2021-11-09", "km": 182600, "age_years": 4.3, "total_maint_cost": 9136.84, "total_downtime_hours": 888.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1FYT789", "int_cat": "L27", "brand": "VOLV", "model": "FL.250", "reg_date": "2021-11-29", "km": 120004, "age_years": 4.3, "total_maint_cost": 5965.64, "total_downtime_hours": 888.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1XAS652", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-10-29", "km": 778213, "age_years": 6.3, "total_maint_cost": 7881.32, "total_downtime_hours": 864.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "2FPS083", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-07-04", "km": 37690, "age_years": 1.7, "total_maint_cost": 495.0, "total_downtime_hours": 864.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1GYR287", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2024-10-09", "km": 44112, "age_years": 1.4, "total_maint_cost": 885.62, "total_downtime_hours": 864.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1UJJ610", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-05-22", "km": 776027, "age_years": 7.8, "total_maint_cost": 6800.66, "total_downtime_hours": 840.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1YUJ161", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-12-17", "km": 464343, "age_years": 5.2, "total_maint_cost": 10610.48, "total_downtime_hours": 840.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1GYT332", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2025-01-22", "km": 10575, "age_years": 1.1, "total_maint_cost": 179.71, "total_downtime_hours": 840.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2DXH145", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-03-09", "km": 522369, "age_years": 9.0, "total_maint_cost": 4733.37, "total_downtime_hours": 816.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1XAS654", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-10-29", "km": 327555, "age_years": 6.3, "total_maint_cost": 5468.44, "total_downtime_hours": 816.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1XAS667", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-10-29", "km": 360510, "age_years": 6.3, "total_maint_cost": 5458.59, "total_downtime_hours": 816.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2BPQ307", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2017-04-07", "km": 406166, "age_years": 8.9, "total_maint_cost": 1941.06, "total_downtime_hours": 792.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2HLV192", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-12-01", "km": 632825, "age_years": 5.3, "total_maint_cost": 13006.33, "total_downtime_hours": 792.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "2GCS920", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-10-28", "km": 81848, "age_years": 1.3, "total_maint_cost": 874.29, "total_downtime_hours": 792.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2CFS148", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS LNG", "reg_date": "2022-07-06", "km": 288055, "age_years": 3.7, "total_maint_cost": 7926.93, "total_downtime_hours": 768.0, "activity_center": "TSP REG LIE LUX", "entity": "2730 TRANSPORT LIEGE"}, {"plate": "2DQU864", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2023-05-30", "km": 316619, "age_years": 2.8, "total_maint_cost": 10954.77, "total_downtime_hours": 768.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2GHP378", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY LNG", "reg_date": "2024-12-17", "km": 40597, "age_years": 1.2, "total_maint_cost": 1029.86, "total_downtime_hours": 768.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1GYP064", "int_cat": "L20", "brand": "VOLV", "model": "FLH.240.16", "reg_date": "2014-04-29", "km": 349873, "age_years": 11.8, "total_maint_cost": 1062.61, "total_downtime_hours": 744.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1WMW599", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-07-16", "km": 307834, "age_years": 6.6, "total_maint_cost": 3614.04, "total_downtime_hours": 744.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2GVS799", "int_cat": "S01", "brand": "DAF", "model": "XD 410 FT", "reg_date": "2025-04-15", "km": 44339, "age_years": 0.9, "total_maint_cost": 0, "total_downtime_hours": 744.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1DYD916", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2017-11-13", "km": 438066, "age_years": 8.3, "total_maint_cost": 4709.13, "total_downtime_hours": 720.0, "activity_center": "LOGISTIC ANTENNE LIMBURG", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1UFZ246", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-04-27", "km": 560599, "age_years": 7.8, "total_maint_cost": 9004.42, "total_downtime_hours": 720.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1WMW528", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-07-16", "km": 291404, "age_years": 6.6, "total_maint_cost": 3187.77, "total_downtime_hours": 720.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "2DSC134", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2023-06-08", "km": 134578, "age_years": 2.7, "total_maint_cost": 2169.71, "total_downtime_hours": 720.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1GYK432", "int_cat": "L21", "brand": "VOLV", "model": "FL.250", "reg_date": "2023-12-18", "km": 59104, "age_years": 2.2, "total_maint_cost": 5035.42, "total_downtime_hours": 720.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "2FSE175", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2024-08-01", "km": 133286, "age_years": 1.6, "total_maint_cost": 1770.33, "total_downtime_hours": 720.0, "activity_center": "LOGISTIC ANTENNE LIMBURG", "entity": "2630 TRANSPORT ANTWERPEN"}, {"plate": "1FYR802", "int_cat": "L20", "brand": "MAN", "model": "TGM 15.250", "reg_date": "2011-08-25", "km": 330965, "age_years": 14.5, "total_maint_cost": 0, "total_downtime_hours": 696.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1UQZ194", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2018-07-13", "km": 445710, "age_years": 7.6, "total_maint_cost": 5400.58, "total_downtime_hours": 696.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1DYV129", "int_cat": "L27", "brand": "IVEC", "model": "IG 190EL 2CA", "reg_date": "2019-06-07", "km": 320338, "age_years": 6.7, "total_maint_cost": 5765.24, "total_downtime_hours": 696.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1WWF498", "int_cat": "S01", "brand": "IVEC", "model": "STRALIS", "reg_date": "2019-10-04", "km": 506008, "age_years": 6.4, "total_maint_cost": 8303.2, "total_downtime_hours": 696.0, "activity_center": "TSP REG HAIN NAMUR", "entity": "2530 TRANSPORT CHARLEROI"}, {"plate": "1YUJ193", "int_cat": "S01", "brand": "IVEC", "model": "S-WAY", "reg_date": "2020-12-17", "km": 323933, "age_years": 5.2, "total_maint_cost": 6673.91, "total_downtime_hours": 696.0, "activity_center": "TSP REG BRU BRAB", "entity": "2330 TRANSPORT BRUSSEL"}, {"plate": "1FYT269", "int_cat": "L21", "brand": "IVEC", "model": "IG 160E 2CA", "reg_date": "2021-10-29", "km": 113470, "age_years": 4.3, "total_maint_cost": 4677.29, "total_downtime_hours": 696.0, "activity_center": "TSP REG ANTW LIMB", "entity": "2630 TRANSPORT ANTWERPEN"}]};
+
+// ============ CHART DEFAULTS ============
+Chart.defaults.color = '#64748b';
+Chart.defaults.font.family = "'Space Mono', monospace";
+Chart.defaults.font.size = 10;
+Chart.defaults.borderColor = '#1e2a3a';
+
+const CAT_COLORS = {
+  'S01': '#f59e0b',
+  'L27': '#3b82f6',
+  'L20': '#22c55e',
+  'L21': '#f43f5e'
+};
+
+function hexAlpha(hex, alpha) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+// ============ AVAILABILITY CHART ============
+const availCtx = document.getElementById('availChart').getContext('2d');
+
+const grad = availCtx.createLinearGradient(0, 0, 0, 280);
+grad.addColorStop(0, 'rgba(239,68,68,0.3)');
+grad.addColorStop(1, 'rgba(239,68,68,0)');
+
+new Chart(availCtx, {
+  type: 'line',
+  data: {
+    labels: D.daily.dates,
+    datasets: [
+      {
+        label: 'Trucks out',
+        data: D.daily.counts,
+        fill: true,
+        backgroundColor: grad,
+        borderColor: '#ef4444',
+        borderWidth: 1,
+        pointRadius: 0,
+        tension: 0.2
+      },
+      {
+        label: '7-day avg',
+        data: D.daily.rolling,
+        fill: false,
+        borderColor: '#f59e0b',
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.4
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#111520',
+        borderColor: '#1e2a3a',
+        borderWidth: 1,
+        titleColor: '#f59e0b',
+        bodyColor: '#e2e8f0',
+        callbacks: {
+          title: (items) => items[0].label,
+          label: (item) => ` ${item.dataset.label}: ${item.raw} trucks`
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: '#1e2a3a' },
+        ticks: {
+          maxTicksLimit: 14,
+          callback: function(val, idx) {
+            const d = this.getLabelForValue(val);
+            return d ? d.substring(0,7) : '';
+          }
+        }
+      },
+      y: {
+        grid: { color: '#1e2a3a' },
+        title: { display: true, text: 'Trucks out', color: '#64748b' },
+        beginAtZero: true
+      }
+    }
+  }
+});
+
+// ============ CAT BARS ============
+const catColors = { S01: '#f59e0b', L27: '#3b82f6', L20: '#22c55e', L21: '#f43f5e' };
+const catLabels = { S01: 'Tractors', L27: 'Large Lorry', L20: 'Light Lorry', L21: 'Med. Lorry' };
+const fleetByCat = D.fleet.by_cat;
+const maxCat = Math.max(...Object.values(fleetByCat));
+const catBarsEl = document.getElementById('catBars');
+Object.entries(fleetByCat).sort((a,b)=>b[1]-a[1]).forEach(([cat, count]) => {
+  const pct = (count/maxCat*100).toFixed(1);
+  catBarsEl.innerHTML += `
+    <div class="cat-bar-row">
+      <div class="cat-label">${cat}</div>
+      <div style="flex:1;">
+        <div style="font-family:var(--mono);font-size:9px;color:var(--muted);margin-bottom:4px;">${catLabels[cat]||cat}</div>
+        <div class="cat-bar-bg">
+          <div class="cat-bar-fill" style="width:${pct}%;background:${catColors[cat]||'#64748b'}"></div>
+        </div>
+      </div>
+      <div class="cat-count" style="color:${catColors[cat]||'#64748b'}">${count}</div>
+    </div>`;
+});
+
+// ============ DOWNTIME BY CAT ============
+const downCtx = document.getElementById('downtimeCatChart').getContext('2d');
+const downCats = Object.keys(D.down_by_cat);
+new Chart(downCtx, {
+  type: 'bar',
+  data: {
+    labels: downCats.map(c => c + '\n' + (catLabels[c]||'')),
+    datasets: [{
+      data: downCats.map(c => D.down_by_cat[c]),
+      backgroundColor: downCats.map(c => hexAlpha(catColors[c]||'#64748b', 0.7)),
+      borderColor: downCats.map(c => catColors[c]||'#64748b'),
+      borderWidth: 1,
+      borderRadius: 3
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#111520',
+        borderColor: '#1e2a3a',
+        borderWidth: 1,
+        callbacks: {
+          label: i => ` ${i.raw} avg hours down`
+        }
+      }
+    },
+    scales: {
+      x: { grid: { display: false } },
+      y: {
+        grid: { color: '#1e2a3a' },
+        title: { display: true, text: 'Avg hours', color: '#64748b' },
+        beginAtZero: true
+      }
+    }
+  }
+});
+
+// ============ MAINTENANCE MONTHLY ============
+const maintMonthCtx = document.getElementById('maintMonthChart').getContext('2d');
+const mGrad = maintMonthCtx.createLinearGradient(0, 0, 0, 250);
+mGrad.addColorStop(0, 'rgba(245,158,11,0.35)');
+mGrad.addColorStop(1, 'rgba(245,158,11,0)');
+new Chart(maintMonthCtx, {
+  type: 'bar',
+  data: {
+    labels: D.maint.months,
+    datasets: [{
+      label: 'Maintenance spend (€)',
+      data: D.maint.vals,
+      backgroundColor: hexAlpha('#f59e0b', 0.6),
+      borderColor: '#f59e0b',
+      borderWidth: 1,
+      borderRadius: 3
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#111520',
+        borderColor: '#1e2a3a',
+        borderWidth: 1,
+        callbacks: {
+          label: i => ` €${i.raw.toLocaleString('be-BE')}`
+        }
+      }
+    },
+    scales: {
+      x: { grid: { display: false }, ticks: { maxRotation: 45 } },
+      y: {
+        grid: { color: '#1e2a3a' },
+        ticks: { callback: v => '€' + (v/1000).toFixed(0) + 'k' },
+        beginAtZero: true
+      }
+    }
+  }
+});
+
+// ============ MAINTENANCE BY CAT (donut) ============
+const maintCatCtx = document.getElementById('maintCatChart').getContext('2d');
+const mcCats = Object.keys(D.maint.by_cat).filter(c => !['T44','T69'].includes(c));
+new Chart(maintCatCtx, {
+  type: 'doughnut',
+  data: {
+    labels: mcCats,
+    datasets: [{
+      data: mcCats.map(c => D.maint.by_cat[c]),
+      backgroundColor: mcCats.map(c => hexAlpha(catColors[c]||'#64748b', 0.75)),
+      borderColor: mcCats.map(c => catColors[c]||'#64748b'),
+      borderWidth: 1
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '65%',
+    plugins: {
+      legend: {
+        display: true,
+        position: 'right',
+        labels: { boxWidth: 10, font: { size: 10 }, color: '#94a3b8' }
+      },
+      tooltip: {
+        backgroundColor: '#111520',
+        borderColor: '#1e2a3a',
+        borderWidth: 1,
+        callbacks: {
+          label: i => ` €${Math.round(i.raw).toLocaleString('be-BE')}`
+        }
+      }
+    }
+  }
+});
+
+// ============ SCATTER: KM vs MAINT ============
+const scatterKmCtx = document.getElementById('scatterKmChart').getContext('2d');
+const scatterKmLegend = document.getElementById('scatterKmLegend');
+const kmDatasets = Object.entries(D.scatter_km).map(([cat, pts]) => {
+  scatterKmLegend.innerHTML += `<div class="legend-item"><div class="legend-dot" style="background:${catColors[cat]||'#64748b'}"></div>${cat}</div>`;
+  return {
+    label: cat,
+    data: pts,
+    backgroundColor: hexAlpha(catColors[cat]||'#64748b', 0.6),
+    pointRadius: 4,
+    pointHoverRadius: 6
+  };
+});
+
+new Chart(scatterKmCtx, {
+  type: 'scatter',
+  data: { datasets: kmDatasets },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#111520',
+        borderColor: '#1e2a3a',
+        borderWidth: 1,
+        callbacks: {
+          label: i => ` ${i.raw.plate||''} · ${i.raw.x}k km · €${Math.round(i.raw.y).toLocaleString()}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: '#1e2a3a' },
+        title: { display: true, text: 'Mileage (×1000 km)', color: '#64748b' }
+      },
+      y: {
+        grid: { color: '#1e2a3a' },
+        title: { display: true, text: 'Total maint. cost (€)', color: '#64748b' },
+        ticks: { callback: v => '€' + (v/1000).toFixed(0) + 'k' }
+      }
+    }
+  }
+});
+
+// ============ DEFECT TYPE CHART ============
+const defTypeCtx = document.getElementById('defectTypeChart').getContext('2d');
+const amberShades = ['#f59e0b','#fbbf24','#fcd34d','#fde68a','#d97706','#b45309','#92400e','#78350f','#ef4444','#f43f5e','#3b82f6','#22c55e','#a78bfa','#fb923c','#64748b'];
+new Chart(defTypeCtx, {
+  type: 'bar',
+  data: {
+    labels: D.defects.labels,
+    datasets: [{
+      data: D.defects.counts,
+      backgroundColor: D.defects.labels.map((_, i) => hexAlpha(amberShades[i % amberShades.length], 0.7)),
+      borderColor: D.defects.labels.map((_, i) => amberShades[i % amberShades.length]),
+      borderWidth: 1,
+      borderRadius: 3
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#111520',
+        borderColor: '#1e2a3a',
+        borderWidth: 1,
+        callbacks: { label: i => ` ${i.raw} events` }
+      }
+    },
+    scales: {
+      x: { grid: { color: '#1e2a3a' }, beginAtZero: true },
+      y: { grid: { display: false }, ticks: { font: { size: 10 } } }
+    }
+  }
+});
+
+// ============ SCATTER: AGE vs DOWNTIME ============
+const ageCtx = document.getElementById('scatterAgeChart').getContext('2d');
+const ageDatasets = Object.entries(D.scatter_age).map(([cat, pts]) => {
+  return {
+    label: cat,
+    data: pts,
+    backgroundColor: hexAlpha(catColors[cat]||'#64748b', 0.6),
+    pointRadius: 4,
+    pointHoverRadius: 6
+  };
+});
+
+new Chart(ageCtx, {
+  type: 'scatter',
+  data: { datasets: ageDatasets },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: true,
+        labels: { boxWidth: 8, font: { size: 10 }, color: '#94a3b8' }
+      },
+      tooltip: {
+        backgroundColor: '#111520',
+        borderColor: '#1e2a3a',
+        borderWidth: 1,
+        callbacks: {
+          label: i => ` ${i.raw.plate||''} · ${i.raw.x}y · ${i.raw.y}h down`
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: '#1e2a3a' },
+        title: { display: true, text: 'Truck age (years)', color: '#64748b' }
+      },
+      y: {
+        grid: { color: '#1e2a3a' },
+        title: { display: true, text: 'Total downtime (hours)', color: '#64748b' }
+      }
+    }
+  }
+});
+
+// Update defect KPIs
+document.getElementById('kpiTotalDefects').textContent = '1,568';
+const totalDownHours = D.table.reduce((s,t)=>s+t.total_downtime_hours,0);
+const trucksDown = D.table.filter(t=>t.total_downtime_hours>0).length;
+document.getElementById('kpiAvgDown').textContent = Math.round(totalDownHours/371);
+
+// ============ FLEET TABLE ============
+let allTrucks = D.table;
+const maxDowntime = Math.max(...allTrucks.map(t=>t.total_downtime_hours));
+const maxMaint = Math.max(...allTrucks.map(t=>t.total_maint_cost));
+
+function badgeCat(cat) {
+  const cls = 'badge badge-' + cat.toLowerCase();
+  return `<span class="${cls}">${cat}</span>`;
+}
+
+function renderTable(data) {
+  const tbody = document.getElementById('fleetTableBody');
+  document.getElementById('tableCount').textContent = data.length + ' trucks';
+  tbody.innerHTML = '';
+  data.slice(0, 300).forEach(t => {
+    const downPct = (t.total_downtime_hours / maxDowntime * 100).toFixed(1);
+    const maintPct = (t.total_maint_cost / maxMaint * 100).toFixed(1);
+    tbody.innerHTML += `
+      <tr>
+        <td style="font-weight:700;color:#f59e0b">${t.plate}</td>
+        <td>${badgeCat(t.int_cat||'?')}</td>
+        <td style="color:#94a3b8">${t.brand||'—'} ${t.model||''}</td>
+        <td>${t.reg_date||'—'}</td>
+        <td style="color:${t.age_years>10?'#ef4444':t.age_years>5?'#f59e0b':'#22c55e'}">${t.age_years||'—'}</td>
+        <td>${t.km ? t.km.toLocaleString() : '—'}</td>
+        <td style="font-size:11px;color:#64748b">${t.activity_center||'—'}</td>
+        <td>
+          <div class="bar-inline">
+            <div class="bar-inline-bg"><div class="bar-inline-fill" style="width:${maintPct}%;background:#3b82f6"></div></div>
+            €${t.total_maint_cost.toLocaleString('be-BE',{maximumFractionDigits:0})}
+          </div>
+        </td>
+        <td>
+          <div class="bar-inline">
+            <div class="bar-inline-bg"><div class="bar-inline-fill" style="width:${downPct}%;background:#ef4444"></div></div>
+            ${t.total_downtime_hours.toLocaleString()}h
+          </div>
+        </td>
+      </tr>`;
+  });
+}
+
+function filterTable() {
+  const q = document.getElementById('tableSearch').value.toLowerCase();
+  const cat = document.getElementById('catFilter').value;
+  const sort = document.getElementById('sortFilter').value;
+
+  let filtered = allTrucks.filter(t => {
+    const matchQ = !q || t.plate.toLowerCase().includes(q) || (t.brand||'').toLowerCase().includes(q);
+    const matchCat = !cat || t.int_cat === cat;
+    return matchQ && matchCat;
+  });
+
+  const sortKey = { downtime:'total_downtime_hours', maint:'total_maint_cost', km:'km', age:'age_years' }[sort];
+  filtered.sort((a,b) => (b[sortKey]||0)-(a[sortKey]||0));
+
+  renderTable(filtered);
+}
+
+filterTable();
+
+// ============ TABS ============
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>
